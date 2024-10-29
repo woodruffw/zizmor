@@ -27,7 +27,7 @@ pest = "2.7.14"
 pest_derive = "2.7.14"
 reqwest = { version = "0.12.7", features = ["blocking", "json"] }
 serde = { version = "1.0.208", features = ["derive"] }
-serde-sarif = "0.6.5"
+serde-sarif = "0.6.6"
 serde_json = "1.0.125"
 serde_yaml = "0.9.34"
 terminal-link = "0.1.0"
