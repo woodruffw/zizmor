@@ -10,13 +10,13 @@ use crate::{
     AuditState,
 };
 
+use super::{audit_meta, WorkflowAudit};
+use crate::models::Matrix;
 use anyhow::Result;
 use github_actions_models::{
     common::expr::{ExplicitExpr, LoE},
     workflow::{job::RunsOn, Job},
 };
-
-use super::{audit_meta, WorkflowAudit};
 
 pub(crate) struct SelfHostedRunner;
 
@@ -106,18 +106,35 @@ impl WorkflowAudit for SelfHostedRunner {
                 ),
                 // The entire `runs-on:` is an expression, which may or may
                 // not be a self-hosted runner when expanded, like above.
-                LoE::Expr(_) => results.push(
-                    Self::finding()
-                        .confidence(Confidence::Low)
-                        .severity(Severity::Unknown)
-                        .persona(Persona::Auditor)
-                        .add_location(
-                            job.location()
-                                .with_keys(&["runs-on".into()])
-                                .annotated("expression may expand into a self-hosted runner"),
+                LoE::Expr(exp) => {
+                    let matrix = Matrix::try_from(&job)?;
+
+                    let expansions = matrix.expand_values();
+
+                    let self_hosted = expansions.iter().any(|(path, expansion)| {
+                        exp.as_bare() == path && expansion.contains("self-hosted")
+                    });
+
+                    if self_hosted {
+                        results.push(
+                            Self::finding()
+                                .confidence(Confidence::High)
+                                .severity(Severity::Unknown)
+                                .persona(Persona::Auditor)
+                                .add_location(
+                                    job.location()
+                                        .with_keys(&["strategy".into()])
+                                        .annotated("matrix declares self-hosted runner"),
+                                )
+                                .add_location(
+                                    job.location().with_keys(&["runs-on".into()]).annotated(
+                                        "expression may expand into a self-hosted runner",
+                                    ),
+                                )
+                                .build(workflow)?,
                         )
-                        .build(workflow)?,
-                ),
+                    }
+                }
             }
         }
 

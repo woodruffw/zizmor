@@ -1,0 +1,10 @@
+on:
+  push:
+
+jobs:
+  whops:
+    runs-on:
+      group: ubuntu-runners
+
+    steps:
+      - run: echo \"hello from a self-hosted runner\"

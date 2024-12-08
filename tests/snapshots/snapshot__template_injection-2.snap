@@ -1,0 +1,18 @@
+---
+source: tests/snapshot.rs
+expression: "zizmor().workflow(workflow_under_test(\"template-injection/template-injection-dynamic-matrix.yml\")).args([\"--persona=auditor\"]).run()?"
+snapshot_kind: text
+---
+warning[template-injection]: code injection via template expansion
+  --> @@INPUT@@:17:9
+   |
+17 |         - name: Please dont
+   |           ----------------- this step
+18 |           run: |
+   |  _________-
+19 | |           echo "doing a thing: ${{ matrix.dynamic }}"
+   | |_____________________________________________________- matrix.dynamic may expand into attacker-controllable code
+   |
+   = note: audit confidence → Medium
+
+1 finding: 0 unknown, 0 informational, 0 low, 1 medium, 0 high

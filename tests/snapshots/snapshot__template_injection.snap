@@ -1,0 +1,6 @@
+---
+source: tests/snapshot.rs
+expression: "zizmor().workflow(workflow_under_test(\"template-injection/template-injection-static-matrix.yml\")).args([\"--persona=auditor\"]).run()?"
+snapshot_kind: text
+---
+No findings to report. Good job!
