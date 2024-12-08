@@ -2,7 +2,7 @@ use super::{audit_meta, WorkflowAudit};
 use crate::finding::{Confidence, Finding, Severity};
 use crate::models::Step;
 use crate::state::AuditState;
-use anyhow::Context;
+use anyhow::{Context, Result};
 use github_actions_models::workflow::job::StepBody;
 use regex::Regex;
 use std::cell::RefCell;
@@ -16,12 +16,13 @@ static GITHUB_ENV_WRITE_CMD: LazyLock<Regex> =
 pub(crate) struct GitHubEnv {
     // NOTE: interior mutability used since Parser::parse requires &mut self
     bash_parser: RefCell<Parser>,
+    pwsh_parser: RefCell<Parser>,
 }
 
 audit_meta!(GitHubEnv, "github-env", "dangerous use of GITHUB_ENV");
 
 impl GitHubEnv {
-    fn bash_uses_github_env(&self, script_body: &str) -> anyhow::Result<bool> {
+    fn bash_uses_github_env(&self, script_body: &str) -> Result<bool> {
         let tree = &self
             .bash_parser
             .borrow_mut()
@@ -56,11 +57,65 @@ impl GitHubEnv {
         Ok(false)
     }
 
+    fn pwsh_uses_github_env(&self, script_body: &str) -> Result<bool> {
+        let tree = &self
+            .pwsh_parser
+            .borrow_mut()
+            .parse(script_body, None)
+            .context("failed to parse `run:` body as pwsh")?;
+
+        let mut stack = vec![tree.root_node()];
+
+        while let Some(node) = stack.pop() {
+            match node.kind() {
+                "pipeline" => {
+                    // A pipeline has one or more "command" children.
+                    for command in node
+                        .named_children(&mut node.walk())
+                        .filter(|c| c.kind() == "command")
+                    {
+                        let command =
+                            &script_body[command.start_byte()..command.end_byte()].to_lowercase();
+
+                        // TODO: We can be more precise here by checking
+                        // `command_parameter` and `variable`.
+                        if (command.contains("out-file")
+                            || command.contains("add-content")
+                            || command.contains("set-content"))
+                            && command.contains("github_env")
+                        {
+                            return Ok(true);
+                        }
+                    }
+                }
+                "redirection" => {
+                    // A redirection has a redirection_operator and a redirected_file_name.
+                    let redirection =
+                        &script_body[node.start_byte()..node.end_byte()].to_lowercase();
+
+                    // TODO: Is it worth checking that the operator is >/>>?
+
+                    if redirection.to_lowercase().contains("github_env") {
+                        return Ok(true);
+                    }
+                }
+                _ => (),
+            }
+
+            for child in node.named_children(&mut node.walk()) {
+                stack.push(child);
+            }
+        }
+
+        Ok(false)
+    }
+
     fn uses_github_env(&self, run_step_body: &str, shell: &str) -> anyhow::Result<bool> {
         match shell {
             "bash" | "sh" => self.bash_uses_github_env(run_step_body),
             "cmd" => Ok(GITHUB_ENV_WRITE_CMD.is_match(run_step_body)),
-            // TODO: handle pwsh/powershell/python.
+            "pwsh" | "powershell" => self.pwsh_uses_github_env(run_step_body),
+            // TODO: handle python.
             &_ => {
                 tracing::warn!(
                     "'{}' shell not supported when evaluating usage of GITHUB_ENV",
@@ -78,12 +133,19 @@ impl WorkflowAudit for GitHubEnv {
         Self: Sized,
     {
         let bash = tree_sitter_bash::LANGUAGE;
-        let mut parser = Parser::new();
-        parser
+        let mut bash_parser = Parser::new();
+        bash_parser
             .set_language(&bash.into())
             .context("failed to load bash parser")?;
+
+        let pwsh = tree_sitter_powershell::LANGUAGE;
+        let mut pwsh_parser = Parser::new();
+        pwsh_parser
+            .set_language(&pwsh.into())
+            .context("failed to load powershell parser")?;
         Ok(Self {
-            bash_parser: RefCell::new(parser),
+            bash_parser: RefCell::new(bash_parser),
+            pwsh_parser: RefCell::new(pwsh_parser),
         })
     }
 
@@ -179,9 +241,7 @@ mod tests {
 
             let sut = GitHubEnv::new(audit_state).expect("failed to create audit");
 
-            let uses_github_env = sut
-                .uses_github_env(case, "bash")
-                .expect("test case is not valid Bash");
+            let uses_github_env = sut.uses_github_env(case, "bash").unwrap();
             assert_eq!(uses_github_env, *expected);
         }
     }
@@ -201,6 +261,50 @@ mod tests {
             ),
         ] {
             assert_eq!(GITHUB_ENV_WRITE_CMD.is_match(case), *expected);
+        }
+    }
+
+    #[test]
+    fn test_exploitable_pwsh_patterns() {
+        for (case, expected) in &[
+            // Common cases
+            ("foo >> ${env:GITHUB_ENV}", true),
+            ("foo >> $env:GITHUB_ENV", true),
+            ("echo \"UV_CACHE_DIR=$UV_CACHE_DIR\" >> $env:GITHUB_ENV", true),
+            // Case insensitivity
+            ("foo >> ${ENV:GITHUB_ENV}", true),
+            ("foo >> ${ENV:github_env}", true),
+            ("foo >> $ENV:GITHUB_ENV", true),
+            ("foo >> $ENV:GitHub_Env", true),
+            // Out-File cases
+            ("echo \"CUDA_PATH=$env:CUDA_PATH\" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append", true),
+            ("\"PYTHON_BIN=$PYTHON_BIN\" | Out-File -FilePath $env:GITHUB_ENV -Append", true),
+            ("echo \"SOLUTION_PATH=${slnPath}\" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append", true),
+            // Add-Content cases
+            ("Add-Content -Path $env:GITHUB_ENV -Value \"RELEASE_VERSION=$releaseVersion\"", true),
+            ("Add-Content $env:GITHUB_ENV \"DOTNET_ROOT=$Env:USERPROFILE\\.dotnet\"", true),
+            // Set-Content cases
+            ("Set-Content -Path $env:GITHUB_ENV -Value \"tag=$tag\"", true),
+            ("[System.Text.Encoding]::UTF8.GetBytes(\"RELEASE_NOTES<<EOF`n$releaseNotes`nEOF\") |\nSet-Content -Path $Env:GITHUB_ENV -NoNewline -Encoding Byte", true),
+            // Case insensitivity
+            ("echo \"foo\" | out-file $Env:GitHub_Env -Append", true),
+            ("echo \"foo\" | out-File $Env:GitHub_Env -Append", true),
+            ("echo \"foo\" | OUT-FILE $Env:GitHub_Env -Append", true),
+            // Negative cases (comments should not be detected)
+            ("foo >> bar # not $env:GITHUB_ENV", false),
+            ("foo >> bar # not ${env:GITHUB_ENV}", false),
+            ("echo \"foo\" | out-file bar -Append # not $env:GITHUB_ENV", false),
+        ] {
+            let audit_state = AuditState {
+                offline: false,
+                gh_token: None,
+                caches: Caches::new(),
+            };
+
+            let sut = GitHubEnv::new(audit_state).expect("failed to create audit");
+
+            let uses_github_env = sut.uses_github_env(case, "pwsh").unwrap();
+            assert_eq!(uses_github_env, *expected);
         }
     }
 }

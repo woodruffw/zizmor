@@ -46,6 +46,7 @@ tracing-indicatif = "0.3.8"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tree-sitter = "0.23.2"
 tree-sitter-bash = "0.23.3"
+tree-sitter-powershell = { git = "https://github.com/woodruffw-forks/tree-sitter-powershell", branch = "main" }
 yamlpath = "0.12.0"
 
 [profile.dev.package]
