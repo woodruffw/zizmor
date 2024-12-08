@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Deref, sync::LazyLock};
+use std::{collections::HashMap, ops::Deref};
 
 use github_actions_models::{
     common::{BasePermission, Permission, Permissions},
@@ -11,28 +11,6 @@ use crate::{
     AuditState,
 };
 
-// Subjective mapping of permissions to severities, when given `write` access.
-static KNOWN_PERMISSIONS: LazyLock<HashMap<&str, Severity>> = LazyLock::new(|| {
-    [
-        ("actions", Severity::High),
-        ("attestations", Severity::High),
-        ("checks", Severity::Medium),
-        ("contents", Severity::High),
-        ("deployments", Severity::High),
-        ("discussions", Severity::Medium),
-        ("id-token", Severity::High),
-        ("issues", Severity::High),
-        ("packages", Severity::High),
-        ("pages", Severity::High),
-        ("pull-requests", Severity::High),
-        ("repository-projects", Severity::Medium),
-        ("security-events", Severity::Medium),
-        // What does the write permission even do here?
-        ("statuses", Severity::Low),
-    ]
-    .into()
-});
-
 audit_meta!(
     ExcessivePermissions,
     "excessive-permissions",
@@ -41,6 +19,7 @@ audit_meta!(
 
 pub(crate) struct ExcessivePermissions {
     pub(crate) _config: AuditState,
+    known_permissions: HashMap<&'static str, Severity>,
 }
 
 impl WorkflowAudit for ExcessivePermissions {
@@ -48,7 +27,27 @@ impl WorkflowAudit for ExcessivePermissions {
     where
         Self: Sized,
     {
-        Ok(Self { _config: config })
+        Ok(Self {
+            _config: config,
+            // Subjective mapping of permissions to severities, when given `write` access.
+            known_permissions: HashMap::from_iter([
+                ("actions", Severity::High),
+                ("attestations", Severity::High),
+                ("checks", Severity::Medium),
+                ("contents", Severity::High),
+                ("deployments", Severity::High),
+                ("discussions", Severity::Medium),
+                ("id-token", Severity::High),
+                ("issues", Severity::High),
+                ("packages", Severity::High),
+                ("pages", Severity::High),
+                ("pull-requests", Severity::High),
+                ("repository-projects", Severity::Medium),
+                ("security-events", Severity::Medium),
+                // What does the write permission even do here?
+                ("statuses", Severity::Low),
+            ]),
+        })
     }
 
     fn audit_workflow<'w>(
@@ -136,7 +135,7 @@ impl ExcessivePermissions {
                             continue;
                         }
 
-                        match KNOWN_PERMISSIONS.get(name.as_str()) {
+                        match self.known_permissions.get(name.as_str()) {
                             Some(sev) => results.push((
                                 *sev,
                                 Confidence::High,
