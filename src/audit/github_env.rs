@@ -7,15 +7,12 @@ use github_actions_models::workflow::job::StepBody;
 use regex::Regex;
 use std::cell::RefCell;
 use std::ops::Deref;
-use std::sync::LazyLock;
 use tree_sitter::Parser;
-
-static GITHUB_ENV_WRITE_CMD: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"(?mi)^.+\s*>>?\s*"?%GITHUB_ENV%"?.*$"#).unwrap());
 
 pub(crate) struct GitHubEnv {
     // NOTE: interior mutability used since Parser::parse requires &mut self
     bash_parser: RefCell<Parser>,
+    github_env_write_cmd: Regex,
 }
 
 audit_meta!(GitHubEnv, "github-env", "dangerous use of GITHUB_ENV");
@@ -59,7 +56,7 @@ impl GitHubEnv {
     fn uses_github_env(&self, run_step_body: &str, shell: &str) -> anyhow::Result<bool> {
         match shell {
             "bash" | "sh" => self.bash_uses_github_env(run_step_body),
-            "cmd" => Ok(GITHUB_ENV_WRITE_CMD.is_match(run_step_body)),
+            "cmd" => Ok(self.github_env_write_cmd.is_match(run_step_body)),
             // TODO: handle pwsh/powershell/python.
             &_ => {
                 tracing::warn!(
@@ -84,6 +81,7 @@ impl WorkflowAudit for GitHubEnv {
             .context("failed to load bash parser")?;
         Ok(Self {
             bash_parser: RefCell::new(parser),
+            github_env_write_cmd: Regex::new(r#"(?mi)^.+\s*>>?\s*"?%GITHUB_ENV%"?.*$"#).unwrap(),
         })
     }
 
@@ -135,7 +133,7 @@ impl WorkflowAudit for GitHubEnv {
 
 #[cfg(test)]
 mod tests {
-    use crate::audit::github_env::{GitHubEnv, GITHUB_ENV_WRITE_CMD};
+    use crate::audit::github_env::GitHubEnv;
     use crate::audit::WorkflowAudit;
     use crate::state::{AuditState, Caches};
 
@@ -200,7 +198,15 @@ mod tests {
                 true,
             ),
         ] {
-            assert_eq!(GITHUB_ENV_WRITE_CMD.is_match(case), *expected);
+            let audit_state = AuditState {
+                no_online_audits: false,
+                gh_token: None,
+                caches: Caches::new(),
+            };
+
+            let sut = GitHubEnv::new(audit_state).expect("failed to create audit");
+
+            assert_eq!(sut.github_env_write_cmd.is_match(case), *expected);
         }
     }
 }

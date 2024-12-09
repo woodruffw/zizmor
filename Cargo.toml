@@ -10,7 +10,7 @@ authors = ["William Woodruff <william@yossarian.net>"]
 license = "MIT"
 keywords = ["cli", "github-actions", "static-analysis", "security"]
 categories = ["command-line-utilities"]
-rust-version = "1.80.1"
+rust-version = "1.75.0"
 
 [dependencies]
 annotate-snippets = "0.11.4"

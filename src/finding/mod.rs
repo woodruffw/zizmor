@@ -1,6 +1,6 @@
 //! Models and APIs for handling findings and their locations.
 
-use std::{borrow::Cow, sync::LazyLock};
+use std::{borrow::Cow, sync::OnceLock};
 
 use anyhow::Result;
 use clap::ValueEnum;
@@ -215,9 +215,6 @@ impl From<&yamlpath::Location> for ConcreteLocation {
     }
 }
 
-static IGNORE_EXPR: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^# zizmor: ignore\[(.+)\]\s*$").unwrap());
-
 /// Represents a single source comment.
 #[derive(Serialize)]
 #[serde(transparent)]
@@ -226,7 +223,13 @@ pub(crate) struct Comment<'w>(&'w str);
 impl Comment<'_> {
     fn ignores(&self, rule_id: &str) -> bool {
         // Extracts foo,bar from `# zizmor: ignore[foo,bar]`
-        let Some(caps) = IGNORE_EXPR.captures(self.0) else {
+        // TODO: Replace with LazyLock once MSRV is >= 1.80.
+        // Or, better yet, remove this entirely.
+        static IGNORE_EXPR: OnceLock<Regex> = OnceLock::new();
+        let Some(caps) = IGNORE_EXPR
+            .get_or_init(|| Regex::new(r"^# zizmor: ignore\[(.+)\]\s*$").unwrap())
+            .captures(self.0)
+        else {
             return false;
         };
 
