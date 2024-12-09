@@ -2039,6 +2039,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8ddffe35a0e5eeeadf13ff7350af564c6e73993a24db62caee1822b185c2600"
 
 [[package]]
+name = "tree-sitter-powershell"
+version = "1.2.0"
+source = "git+https://github.com/woodruffw-forks/tree-sitter-powershell?branch=main#f815a5edbe5062323fe28bebd930b1b359dc87fe"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "tree-sitter-yaml"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2627,5 +2636,6 @@ dependencies = [
  "tracing-subscriber",
  "tree-sitter",
  "tree-sitter-bash",
+ "tree-sitter-powershell",
  "yamlpath",
 ]
