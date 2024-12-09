@@ -6,8 +6,7 @@ snapshot_kind: text
 error[insecure-commands]: execution of insecure workflow commands is enabled
  --> @@INPUT@@:8:5
   |
-8 |       env:
-  |  _____^
+8 | /     env:
 9 | |       ACTIONS_ALLOW_UNSECURE_COMMANDS: yes
   | |__________________________________________^ insecure commands enabled here
   |
