@@ -152,6 +152,41 @@ fn self_hosted() -> Result<()> {
         .workflow(workflow_under_test("self-hosted.yml"))
         .run()?);
 
+    insta::assert_snapshot!(zizmor()
+        .workflow(workflow_under_test(
+            "self-hosted/self-hosted-runner-label.yml"
+        ))
+        .args(["--persona=auditor"])
+        .run()?);
+
+    insta::assert_snapshot!(zizmor()
+        .workflow(workflow_under_test(
+            "self-hosted/self-hosted-runner-group.yml"
+        ))
+        .args(["--persona=auditor"])
+        .run()?);
+
+    insta::assert_snapshot!(zizmor()
+        .workflow(workflow_under_test(
+            "self-hosted/self-hosted-matrix-dimension.yml"
+        ))
+        .args(["--persona=auditor"])
+        .run()?);
+
+    insta::assert_snapshot!(zizmor()
+        .workflow(workflow_under_test(
+            "self-hosted/self-hosted-matrix-inclusion.yml"
+        ))
+        .args(["--persona=auditor"])
+        .run()?);
+
+    insta::assert_snapshot!(zizmor()
+        .workflow(workflow_under_test(
+            "self-hosted/self-hosted-matrix-exclusion.yml"
+        ))
+        .args(["--persona=auditor"])
+        .run()?);
+
     Ok(())
 }
 
@@ -178,6 +213,25 @@ fn insecure_commands() -> Result<()> {
 
     insta::assert_snapshot!(zizmor()
         .workflow(workflow_under_test("insecure-commands.yml"))
+        .run()?);
+
+    Ok(())
+}
+
+#[test]
+fn template_injection() -> Result<()> {
+    insta::assert_snapshot!(zizmor()
+        .workflow(workflow_under_test(
+            "template-injection/template-injection-static-matrix.yml"
+        ))
+        .args(["--persona=auditor"])
+        .run()?);
+
+    insta::assert_snapshot!(zizmor()
+        .workflow(workflow_under_test(
+            "template-injection/template-injection-dynamic-matrix.yml"
+        ))
+        .args(["--persona=auditor"])
         .run()?);
 
     Ok(())

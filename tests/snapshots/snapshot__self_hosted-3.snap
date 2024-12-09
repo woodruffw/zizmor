@@ -1,0 +1,14 @@
+---
+source: tests/snapshot.rs
+expression: "zizmor().workflow(workflow_under_test(\"self-hosted/self-hosted-runner-label.yml\")).args([\"--persona=auditor\"]).run()?"
+snapshot_kind: text
+---
+note[self-hosted-runner]: runs on a self-hosted runner
+ --> @@INPUT@@:6:5
+  |
+6 |     runs-on: [self-hosted, linux, arm64]
+  |     ------------------------------------ note: self-hosted runner used here
+  |
+  = note: audit confidence → High
+
+1 finding: 1 unknown, 0 informational, 0 low, 0 medium, 0 high

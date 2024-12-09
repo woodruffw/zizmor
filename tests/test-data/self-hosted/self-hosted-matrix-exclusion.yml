@@ -1,0 +1,16 @@
+# Adapted from
+# https://github.com/woodruffw/gha-hazmat/blob/main/.github/workflows/self-hosted.yml
+on:
+  push:
+
+jobs:
+  ok:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [self-hosted, macOS-latest, ubuntu-latest]
+        exclude:
+          - os: self-hosted # Wont trigger a finding
+    steps:
+      - run: echo \"hello from a Github runner\"

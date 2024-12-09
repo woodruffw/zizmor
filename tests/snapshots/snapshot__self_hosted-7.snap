@@ -1,0 +1,6 @@
+---
+source: tests/snapshot.rs
+expression: "zizmor().workflow(workflow_under_test(\"self-hosted/self-hosted-matrix-exclusion.yml\")).args([\"--persona=auditor\"]).run()?"
+snapshot_kind: text
+---
+No findings to report. Good job!

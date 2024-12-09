@@ -1,0 +1,18 @@
+# Adapted from
+# https://github.com/woodruffw/gha-hazmat/blob/main/.github/workflows/template-injection.yml
+name: safe
+on:
+  issues:
+
+jobs:
+  ok-ish:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        frob: ["nothing", "special"]
+
+    steps:
+      - name: Nothing to fear
+        run: |
+          echo "issue created: ${{ matrix.frob }}"
