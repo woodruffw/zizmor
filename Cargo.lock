@@ -1707,6 +1707,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
+name = "streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
+
+[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2012,13 +2018,14 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter"
-version = "0.23.2"
+version = "0.24.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0203df02a3b6dd63575cc1d6e609edc2181c9a11867a271b25cfd2abff3ec5ca"
+checksum = "b67baf55e7e1b6806063b1e51041069c90afff16afcbbccd278d899f9d84bca4"
 dependencies = [
  "cc",
  "regex",
  "regex-syntax 0.8.5",
+ "streaming-iterator",
  "tree-sitter-language",
 ]
 
@@ -2037,6 +2044,16 @@ name = "tree-sitter-language"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8ddffe35a0e5eeeadf13ff7350af564c6e73993a24db62caee1822b185c2600"
+
+[[package]]
+name = "tree-sitter-powershell"
+version = "0.24.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49f0daf847df270c8937ac42b8b280532cfd69e8aeb3743675c5bb1360d9117d"
+dependencies = [
+ "cc",
+ "tree-sitter",
+]
 
 [[package]]
 name = "tree-sitter-yaml"
@@ -2483,9 +2500,9 @@ checksum = "1e9df38ee2d2c3c5948ea468a8406ff0db0b29ae1ffde1bcf20ef305bcc95c51"
 
 [[package]]
 name = "yamlpath"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "177289048180e31992753549e5533b80c87caa285f1ed74085a55ebc5a664062"
+checksum = "98b19abff49f569d353d8fbf024f83a440a28e2e024e1e57f379417ed0cd1216"
 dependencies = [
  "thiserror 1.0.69",
  "tree-sitter",
@@ -2627,5 +2644,6 @@ dependencies = [
  "tracing-subscriber",
  "tree-sitter",
  "tree-sitter-bash",
+ "tree-sitter-powershell",
  "yamlpath",
 ]
