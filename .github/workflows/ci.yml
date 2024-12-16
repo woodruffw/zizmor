@@ -22,18 +22,32 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - "1.75.0" # MSRV
+          - "stable"
+
     steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      with:
-        persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
 
-    - name: Test
-      run: cargo test
+      - name: Configure Rust
+        run: |
+          rustup install "${TOOLCHAIN}"
+          rustup default "${TOOLCHAIN}"
+        env:
+          TOOLCHAIN: ${{ matrix.rust }}
 
-    - name: Test snippets
-      run: |
-        make snippets
-        git diff --exit-code
+      - name: Test
+        run: cargo test
+
+      - name: Test snippets
+        if: matrix.rust == 'stable'
+        run: |
+          make snippets
+          git diff --exit-code
 
   all-tests-pass:
     if: always()
