@@ -4,7 +4,7 @@ use std::collections::{hash_map::Entry, HashMap};
 
 use crate::{
     finding::{Finding, Location, Severity},
-    registry::{FindingRegistry, WorkflowKey, WorkflowRegistry},
+    registry::{FindingRegistry, InputKey, WorkflowRegistry},
 };
 use annotate_snippets::{Level, Renderer, Snippet};
 use anstream::{print, println};
@@ -29,7 +29,7 @@ pub(crate) fn finding_snippet<'w>(
 ) -> Vec<Snippet<'w>> {
     // Our finding might span multiple workflows, so we need to group locations
     // by their enclosing workflow to generate each snippet correctly.
-    let mut locations_by_workflow: HashMap<&WorkflowKey, Vec<&Location<'w>>> = HashMap::new();
+    let mut locations_by_workflow: HashMap<&InputKey, Vec<&Location<'w>>> = HashMap::new();
     for location in &finding.locations {
         match locations_by_workflow.entry(location.symbolic.key) {
             Entry::Occupied(mut e) => {

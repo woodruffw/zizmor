@@ -11,7 +11,7 @@ use terminal_link::Link;
 
 use crate::{
     models::{Job, Step, Workflow},
-    registry::WorkflowKey,
+    registry::InputKey,
 };
 
 pub(crate) mod locate;
@@ -124,7 +124,7 @@ impl<'w> Route<'w> {
 #[derive(Serialize, Clone, Debug)]
 pub(crate) struct SymbolicLocation<'w> {
     /// The unique ID of the workflow, as it appears in the workflow registry.
-    pub(crate) key: &'w WorkflowKey,
+    pub(crate) key: &'w InputKey,
 
     /// An annotation for this location.
     pub(crate) annotation: String,
