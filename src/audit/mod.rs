@@ -145,3 +145,21 @@ pub(crate) trait WorkflowAudit: Audit {
         self.audit_workflow(workflow)
     }
 }
+
+/// (Composite) action auditing trait.
+///
+///
+pub(crate) trait ActionAudit: Audit {
+    fn new(state: AuditState) -> Result<Self>
+    where
+        Self: Sized;
+
+    // /// The top-level action auditing function.
+    // ///
+    // /// Implementors **should not** override this blanket implementation,
+    // /// since it's marked with tracing instrumentation.
+    // #[instrument(skip(self))]
+    // fn audit<'w>(&self, workflow: &'w Workflow) -> Result<Vec<Finding<'w>>> {
+    //     self.audit_action(workflow)
+    // }
+}

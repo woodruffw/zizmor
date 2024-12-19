@@ -2,10 +2,11 @@
 //! from the `github-actions-models` crate.
 
 use crate::finding::{Route, SymbolicLocation};
-use crate::registry::WorkflowKey;
+use crate::registry::InputKey;
 use crate::utils::extract_expressions;
 use anyhow::{anyhow, bail, Context, Result};
 use camino::Utf8Path;
+use github_actions_models::action;
 use github_actions_models::common::expr::LoE;
 use github_actions_models::workflow::event::{BareEvent, OptionalBody};
 use github_actions_models::workflow::job::{RunsOn, Strategy};
@@ -26,8 +27,8 @@ use terminal_link::Link;
 /// This type implements [`Deref`] for [`workflow::Workflow`],
 /// providing access to the underlying data model.
 pub(crate) struct Workflow {
-    /// This workflow's unique key into zizmor's runtime workflow registry.
-    pub(crate) key: WorkflowKey,
+    /// This workflow's unique key into zizmor's runtime registry.
+    pub(crate) key: InputKey,
     /// A clickable (OSC 8) link to this workflow, if remote.
     pub(crate) link: Option<String>,
     pub(crate) document: yamlpath::Document,
@@ -50,15 +51,15 @@ impl Deref for Workflow {
 
 impl Workflow {
     /// Load a workflow from a buffer, with an assigned name.
-    pub(crate) fn from_string(contents: String, key: WorkflowKey) -> Result<Self> {
+    pub(crate) fn from_string(contents: String, key: InputKey) -> Result<Self> {
         let inner = serde_yaml::from_str(&contents)
             .with_context(|| format!("invalid GitHub Actions workflow: {key}"))?;
 
         let document = yamlpath::Document::new(&contents)?;
 
         let link = match key {
-            WorkflowKey::Local(_) => None,
-            WorkflowKey::Remote(_) => {
+            InputKey::Local(_) => None,
+            InputKey::Remote(_) => {
                 // NOTE: WorkflowKey's Display produces a URL, hence `key.to_string()`.
                 Some(Link::new(key.path(), &key.to_string()).to_string())
             }
@@ -77,7 +78,7 @@ impl Workflow {
         let contents = std::fs::read_to_string(p.as_ref())?;
         let path = p.as_ref().canonicalize_utf8()?;
 
-        Self::from_string(contents, WorkflowKey::local(path)?)
+        Self::from_string(contents, InputKey::local(path)?)
     }
 
     /// Returns the filename (i.e. base component) of the loaded workflow.
@@ -774,6 +775,30 @@ impl<'a> Uses<'a> {
         match self {
             Uses::Docker(docker) => docker.hash.is_some(),
             Uses::Repository(repo) => !repo.ref_is_commit(),
+        }
+    }
+}
+
+/// Represents an entire (composite) action.
+///
+/// This type implements [`Deref`] for [`action::Composite`], providing
+/// access to the underlying data model.
+pub(crate) struct Action {
+    /// This action's unique key into zizmor's runtime registry.
+    pub(crate) key: InputKey,
+    pub(crate) document: yamlpath::Document,
+    inner: action::Composite,
+}
+
+impl Action {
+    /// This actions's [`SymbolicLocation`].
+    pub(crate) fn location(&self) -> SymbolicLocation {
+        SymbolicLocation {
+            key: &self.key,
+            annotation: "this action".to_string(),
+            link: None,
+            route: Route::new(),
+            primary: false,
         }
     }
 }

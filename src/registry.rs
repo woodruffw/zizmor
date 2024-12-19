@@ -17,12 +17,12 @@ use serde::Serialize;
 use tracing::instrument;
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize)]
-pub(crate) struct LocalWorkflowKey {
+pub(crate) struct LocalKey {
     path: Utf8PathBuf,
 }
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize)]
-pub(crate) struct RemoteWorkflowKey {
+pub(crate) struct RemoteKey {
     owner: String,
     repo: String,
     git_ref: Option<String>,
@@ -35,16 +35,16 @@ pub(crate) struct RemoteWorkflowKey {
 /// are just canonical paths to files on disk, while remote keys are
 /// relative paths within a referenced GitHub repository.
 #[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize)]
-pub(crate) enum WorkflowKey {
-    Local(LocalWorkflowKey),
-    Remote(RemoteWorkflowKey),
+pub(crate) enum InputKey {
+    Local(LocalKey),
+    Remote(RemoteKey),
 }
 
-impl Display for WorkflowKey {
+impl Display for InputKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WorkflowKey::Local(local) => write!(f, "file://{path}", path = local.path),
-            WorkflowKey::Remote(remote) => {
+            InputKey::Local(local) => write!(f, "file://{path}", path = local.path),
+            InputKey::Remote(remote) => {
                 // No ref means assume HEAD, i.e. whatever's on the default branch.
                 let git_ref = remote.git_ref.as_deref().unwrap_or("HEAD");
                 write!(
@@ -59,22 +59,22 @@ impl Display for WorkflowKey {
     }
 }
 
-impl WorkflowKey {
+impl InputKey {
     pub(crate) fn local(path: Utf8PathBuf) -> Result<Self> {
-        // All workflow keys must have a filename component.
+        // All keys must have a filename component.
         if path.file_name().is_none() {
-            return Err(anyhow!("invalid local workflow: no filename component"));
+            return Err(anyhow!("invalid local input: no filename component"));
         }
 
-        Ok(Self::Local(LocalWorkflowKey { path }))
+        Ok(Self::Local(LocalKey { path }))
     }
 
     pub(crate) fn remote(slug: &RepositoryUses, path: String) -> Result<Self> {
         if Utf8Path::new(&path).file_name().is_none() {
-            return Err(anyhow!("invalid remote workflow: no filename component"));
+            return Err(anyhow!("invalid remote input: no filename component"));
         }
 
-        Ok(Self::Remote(RemoteWorkflowKey {
+        Ok(Self::Remote(RemoteKey {
             owner: slug.owner.into(),
             repo: slug.repo.into(),
             git_ref: slug.git_ref.map(Into::into),
@@ -82,30 +82,30 @@ impl WorkflowKey {
         }))
     }
 
-    /// Returns this [`WorkflowKey`]'s filepath component.
+    /// Returns this [`InputKey`]'s filepath component.
     ///
     /// This will be an absolute path for local keys, and a relative
     /// path for remote keys.
     pub(crate) fn path(&self) -> &str {
         match self {
-            WorkflowKey::Local(local) => local.path.as_str(),
-            WorkflowKey::Remote(remote) => remote.path.as_str(),
+            InputKey::Local(local) => local.path.as_str(),
+            InputKey::Remote(remote) => remote.path.as_str(),
         }
     }
 
-    /// Returns the filename component of this [`WorkflowKey`].
+    /// Returns the filename component of this [`InputKey`].
     pub(crate) fn filename(&self) -> &str {
         // NOTE: Safe unwraps, since the presence of a filename component
-        // is a construction invariant of all `WorkflowKey` variants.
+        // is a construction invariant of all `InputKey` variants.
         match self {
-            WorkflowKey::Local(local) => local.path.file_name().unwrap(),
-            WorkflowKey::Remote(remote) => remote.path.file_name().unwrap(),
+            InputKey::Local(local) => local.path.file_name().unwrap(),
+            InputKey::Remote(remote) => remote.path.file_name().unwrap(),
         }
     }
 }
 
 pub(crate) struct WorkflowRegistry {
-    pub(crate) workflows: IndexMap<WorkflowKey, Workflow>,
+    pub(crate) workflows: IndexMap<InputKey, Workflow>,
 }
 
 impl WorkflowRegistry {
@@ -141,11 +141,11 @@ impl WorkflowRegistry {
         self.register(workflow)
     }
 
-    pub(crate) fn iter_workflows(&self) -> indexmap::map::Iter<'_, WorkflowKey, Workflow> {
+    pub(crate) fn iter_workflows(&self) -> indexmap::map::Iter<'_, InputKey, Workflow> {
         self.workflows.iter()
     }
 
-    pub(crate) fn get_workflow(&self, key: &WorkflowKey) -> &Workflow {
+    pub(crate) fn get_workflow(&self, key: &InputKey) -> &Workflow {
         self.workflows
             .get(key)
             .expect("API misuse: requested an un-registered workflow")
@@ -160,7 +160,7 @@ impl WorkflowRegistry {
     /// The exceptional case here is when zizmor is asked to scan a single
     /// workflow at some arbitrary location on disk. In that case, just
     /// the base workflow filename itself is returned.
-    pub(crate) fn get_workflow_relative_path<'a>(&self, key: &'a WorkflowKey) -> &'a str {
+    pub(crate) fn get_workflow_relative_path<'a>(&self, key: &'a InputKey) -> &'a str {
         let path = key.path();
 
         match path.rfind(".github/workflows") {
@@ -297,18 +297,18 @@ impl From<FindingRegistry<'_>> for ExitCode {
 mod tests {
     use crate::models::Uses;
 
-    use super::WorkflowKey;
+    use super::InputKey;
 
     #[test]
     fn test_workflow_key_display() {
-        let local = WorkflowKey::local("/foo/bar/baz.yml".into()).unwrap();
+        let local = InputKey::local("/foo/bar/baz.yml".into()).unwrap();
         assert_eq!(local.to_string(), "file:///foo/bar/baz.yml");
 
         // No ref
         let Uses::Repository(slug) = Uses::from_step("foo/bar").unwrap() else {
             panic!()
         };
-        let remote = WorkflowKey::remote(&slug, ".github/workflows/baz.yml".into()).unwrap();
+        let remote = InputKey::remote(&slug, ".github/workflows/baz.yml".into()).unwrap();
         assert_eq!(
             remote.to_string(),
             "https://github.com/foo/bar/blob/HEAD/.github/workflows/baz.yml"
@@ -318,7 +318,7 @@ mod tests {
         let Uses::Repository(slug) = Uses::from_step("foo/bar@v1").unwrap() else {
             panic!()
         };
-        let remote = WorkflowKey::remote(&slug, ".github/workflows/baz.yml".into()).unwrap();
+        let remote = InputKey::remote(&slug, ".github/workflows/baz.yml".into()).unwrap();
         assert_eq!(
             remote.to_string(),
             "https://github.com/foo/bar/blob/v1/.github/workflows/baz.yml"
