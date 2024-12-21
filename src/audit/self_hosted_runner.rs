@@ -10,7 +10,7 @@ use crate::{
     AuditState,
 };
 
-use super::{audit_meta, WorkflowAudit};
+use super::{audit_meta, Audit};
 use crate::models::Matrix;
 use anyhow::Result;
 use github_actions_models::{
@@ -26,7 +26,7 @@ audit_meta!(
     "runs on a self-hosted runner"
 );
 
-impl WorkflowAudit for SelfHostedRunner {
+impl Audit for SelfHostedRunner {
     fn new(_state: AuditState) -> anyhow::Result<Self>
     where
         Self: Sized,

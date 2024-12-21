@@ -7,7 +7,7 @@ use github_actions_models::{
 };
 use itertools::Itertools;
 
-use super::{audit_meta, WorkflowAudit};
+use super::{audit_meta, Audit};
 use crate::{
     finding::{Confidence, Finding, Persona, Severity},
     state::AuditState,
@@ -44,7 +44,7 @@ impl Artipacked {
     }
 }
 
-impl WorkflowAudit for Artipacked {
+impl Audit for Artipacked {
     fn new(_state: AuditState) -> Result<Self> {
         Ok(Self)
     }

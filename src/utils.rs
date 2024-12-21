@@ -1,6 +1,9 @@
 //! Helper routines.
 
-use github_actions_models::common::expr::ExplicitExpr;
+use github_actions_models::common::{
+    expr::{ExplicitExpr, LoE},
+    Env,
+};
 
 /// Convenience trait for inline transformations of `Self`.
 ///
@@ -80,6 +83,32 @@ pub(crate) fn extract_expressions(text: &str) -> Vec<ExplicitExpr> {
     }
 
     exprs
+}
+
+/// Returns whether the given `env.name` environment access is "static,"
+/// i.e. is not influenced by another expression.
+pub(crate) fn env_is_static(name: &str, envs: &[&LoE<Env>]) -> bool {
+    for env in envs {
+        match env {
+            // Any `env:` that is wholly an expression cannot be static.
+            LoE::Expr(_) => return false,
+            LoE::Literal(env) => {
+                let Some(value) = env.get(name) else {
+                    continue;
+                };
+
+                // A present `env:` value is static if it has no interior expressions.
+                // TODO: We could instead return the interior expressions here
+                // for further analysis, to further eliminate false positives
+                // e.g. `env.foo: ${{ something-safe }}`.
+                return extract_expressions(&value.to_string()).is_empty();
+            }
+        }
+    }
+
+    // No `env:` blocks explicitly contain this name, so it's trivially static.
+    // In practice this is probably an invalid workflow.
+    true
 }
 
 #[cfg(test)]

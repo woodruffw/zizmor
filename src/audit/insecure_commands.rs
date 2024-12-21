@@ -1,4 +1,4 @@
-use crate::audit::WorkflowAudit;
+use crate::audit::Audit;
 use crate::finding::{Confidence, Finding, Persona, Severity, SymbolicLocation};
 use crate::models::{Steps, Workflow};
 use crate::state::AuditState;
@@ -95,7 +95,7 @@ impl InsecureCommands {
     }
 }
 
-impl WorkflowAudit for InsecureCommands {
+impl Audit for InsecureCommands {
     fn new(_: AuditState) -> anyhow::Result<Self>
     where
         Self: Sized,

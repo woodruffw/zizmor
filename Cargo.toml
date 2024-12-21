@@ -22,7 +22,7 @@ clap-verbosity-flag = { version = "3.0.0", features = [
     "tracing",
 ], default-features = false }
 etcetera = "0.8.0"
-github-actions-models = "0.15.0"
+github-actions-models = "0.17.0"
 http-cache-reqwest = "0.15.0"
 human-panic = "2.0.1"
 indexmap = "2.7.0"

@@ -2,10 +2,11 @@
 //! from the `github-actions-models` crate.
 
 use crate::finding::{Route, SymbolicLocation};
-use crate::registry::WorkflowKey;
-use crate::utils::extract_expressions;
+use crate::registry::InputKey;
+use crate::utils::{self, extract_expressions};
 use anyhow::{anyhow, bail, Context, Result};
 use camino::Utf8Path;
+use github_actions_models::action;
 use github_actions_models::common::expr::LoE;
 use github_actions_models::workflow::event::{BareEvent, OptionalBody};
 use github_actions_models::workflow::job::{RunsOn, Strategy};
@@ -21,17 +22,35 @@ use std::fmt::Debug;
 use std::{iter::Enumerate, ops::Deref};
 use terminal_link::Link;
 
+/// Common interfaces between workflow and action steps.
+pub(crate) trait StepCommon {
+    /// Returns whether the given `env.name` environment access is "static,"
+    /// i.e. is not influenced by another expression.
+    fn env_is_static(&self, name: &str) -> bool;
+
+    /// Returns this step's job's strategy, if present.
+    ///
+    /// Composite action steps have no strategy.
+    fn strategy(&self) -> Option<&Strategy>;
+}
+
 /// Represents an entire GitHub Actions workflow.
 ///
 /// This type implements [`Deref`] for [`workflow::Workflow`],
 /// providing access to the underlying data model.
 pub(crate) struct Workflow {
-    /// This workflow's unique key into zizmor's runtime workflow registry.
-    pub(crate) key: WorkflowKey,
+    /// This workflow's unique key into zizmor's runtime registry.
+    pub(crate) key: InputKey,
     /// A clickable (OSC 8) link to this workflow, if remote.
     pub(crate) link: Option<String>,
     pub(crate) document: yamlpath::Document,
     inner: workflow::Workflow,
+}
+
+impl AsRef<yamlpath::Document> for Workflow {
+    fn as_ref(&self) -> &yamlpath::Document {
+        &self.document
+    }
 }
 
 impl Debug for Workflow {
@@ -50,15 +69,15 @@ impl Deref for Workflow {
 
 impl Workflow {
     /// Load a workflow from a buffer, with an assigned name.
-    pub(crate) fn from_string(contents: String, key: WorkflowKey) -> Result<Self> {
+    pub(crate) fn from_string(contents: String, key: InputKey) -> Result<Self> {
         let inner = serde_yaml::from_str(&contents)
             .with_context(|| format!("invalid GitHub Actions workflow: {key}"))?;
 
         let document = yamlpath::Document::new(&contents)?;
 
         let link = match key {
-            WorkflowKey::Local(_) => None,
-            WorkflowKey::Remote(_) => {
+            InputKey::Local(_) => None,
+            InputKey::Remote(_) => {
                 // NOTE: WorkflowKey's Display produces a URL, hence `key.to_string()`.
                 Some(Link::new(key.path(), &key.to_string()).to_string())
             }
@@ -77,7 +96,7 @@ impl Workflow {
         let contents = std::fs::read_to_string(p.as_ref())?;
         let path = p.as_ref().canonicalize_utf8()?;
 
-        Self::from_string(contents, WorkflowKey::local(path)?)
+        Self::from_string(contents, InputKey::local(path)?)
     }
 
     /// Returns the filename (i.e. base component) of the loaded workflow.
@@ -230,7 +249,7 @@ impl<'w> Iterator for Jobs<'w> {
 
 /// Represents an execution Matrix within a Job.
 ///
-/// This type implements [`Deref`] for [job::NormalJob::Strategy`], providing
+/// This type implements [`Deref`] for [`job::NormalJob::strategy`], providing
 /// access to the underlying data model.
 #[derive(Clone)]
 pub(crate) struct Matrix<'w> {
@@ -414,25 +433,17 @@ impl<'w> Deref for Step<'w> {
     }
 }
 
-impl<'w> Step<'w> {
-    fn new(index: usize, inner: &'w workflow::job::Step, parent: Job<'w>) -> Self {
-        Self {
-            index,
-            inner,
-            parent,
-        }
-    }
-
-    /// Returns whether the given `env.name` environment access is "static,"
-    /// i.e. is not influenced by another expression.
-    pub(crate) fn env_is_static(&self, name: &str) -> bool {
+impl StepCommon for Step<'_> {
+    fn env_is_static(&self, name: &str) -> bool {
         // Collect each of the step, job, and workflow-level `env` blocks
         // and check each.
         let mut envs = vec![];
 
         match &self.body {
-            StepBody::Uses { .. } => panic!("API misuse: can't call env_is_static on a uses: step"),
-            StepBody::Run {
+            workflow::job::StepBody::Uses { .. } => {
+                panic!("API misuse: can't call env_is_static on a uses: step")
+            }
+            workflow::job::StepBody::Run {
                 run: _,
                 working_directory: _,
                 shell: _,
@@ -443,27 +454,21 @@ impl<'w> Step<'w> {
         envs.push(&self.job().env);
         envs.push(&self.workflow().env);
 
-        for env in envs {
-            match env {
-                // Any `env:` that is wholly an expression cannot be static.
-                LoE::Expr(_) => return false,
-                LoE::Literal(env) => {
-                    let Some(value) = env.get(name) else {
-                        continue;
-                    };
+        utils::env_is_static(name, &envs)
+    }
 
-                    // A present `env:` value is static if it has no interior expressions.
-                    // TODO: We could instead return the interior expressions here
-                    // for further analysis, to further eliminate false positives
-                    // e.g. `env.foo: ${{ something-safe }}`.
-                    return extract_expressions(&value.to_string()).is_empty();
-                }
-            }
+    fn strategy(&self) -> Option<&Strategy> {
+        self.job().strategy.as_ref()
+    }
+}
+
+impl<'w> Step<'w> {
+    fn new(index: usize, inner: &'w workflow::job::Step, parent: Job<'w>) -> Self {
+        Self {
+            index,
+            inner,
+            parent,
         }
-
-        // No `env:` blocks explicitly contain this name, so it's trivially static.
-        // In practice this is probably an invalid workflow.
-        true
     }
 
     /// Returns this step's parent [`NormalJob`].
@@ -775,6 +780,181 @@ impl<'a> Uses<'a> {
             Uses::Docker(docker) => docker.hash.is_some(),
             Uses::Repository(repo) => !repo.ref_is_commit(),
         }
+    }
+}
+
+/// Represents an entire (composite) action.
+///
+/// This type implements [`Deref`] for [`action::Composite`], providing
+/// access to the underlying data model.
+pub(crate) struct Action {
+    /// This action's unique key into zizmor's runtime registry.
+    pub(crate) key: InputKey,
+    pub(crate) document: yamlpath::Document,
+    inner: action::Action,
+}
+
+impl AsRef<yamlpath::Document> for Action {
+    fn as_ref(&self) -> &yamlpath::Document {
+        &self.document
+    }
+}
+
+impl Deref for Action {
+    type Target = action::Action;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl Debug for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{key}", key = self.key)
+    }
+}
+
+impl Action {
+    /// Load an action from the given file on disk.
+    pub(crate) fn from_file<P: AsRef<Utf8Path>>(p: P) -> Result<Self> {
+        let contents =
+            std::fs::read_to_string(p.as_ref()).with_context(|| "couldn't read action file")?;
+        let path = p.as_ref().canonicalize_utf8()?;
+
+        Self::from_string(contents, InputKey::local(path)?)
+    }
+
+    /// Load a workflow from a buffer, with an assigned name.
+    pub(crate) fn from_string(contents: String, key: InputKey) -> Result<Self> {
+        let inner = serde_yaml::from_str(&contents)
+            .with_context(|| format!("invalid GitHub Actions definition: {key}"))?;
+
+        let document = yamlpath::Document::new(&contents)?;
+
+        Ok(Self {
+            key,
+            document,
+            inner,
+        })
+    }
+
+    /// This actions's [`SymbolicLocation`].
+    pub(crate) fn location(&self) -> SymbolicLocation {
+        SymbolicLocation {
+            key: &self.key,
+            annotation: "this action".to_string(),
+            link: None,
+            route: Route::new(),
+            primary: false,
+        }
+    }
+
+    /// A [`CompositeSteps`] iterator over this workflow's constituent [`CompositeStep`]s.
+    pub(crate) fn steps(&self) -> CompositeSteps<'_> {
+        CompositeSteps::new(self)
+    }
+}
+
+/// An iterable container for steps within a [`Job`].
+pub(crate) struct CompositeSteps<'a> {
+    inner: Enumerate<std::slice::Iter<'a, github_actions_models::action::Step>>,
+    parent: &'a Action,
+}
+
+impl<'a> CompositeSteps<'a> {
+    /// Create a new [`CompositeSteps`].
+    ///
+    /// Invariant: panics if the given [`Action`] is not a composite action.
+    fn new(action: &'a Action) -> Self {
+        match &action.inner.runs {
+            action::Runs::Composite(composite) => Self {
+                inner: composite.steps.iter().enumerate(),
+                parent: action,
+            },
+            _ => panic!("API misuse: can't call steps() on a non-composite action"),
+        }
+    }
+}
+
+impl<'a> Iterator for CompositeSteps<'a> {
+    type Item = CompositeStep<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.inner.next();
+
+        match item {
+            Some((idx, step)) => Some(CompositeStep::new(idx, step, self.parent)),
+            None => None,
+        }
+    }
+}
+
+pub(crate) struct CompositeStep<'a> {
+    /// The step's index within its parent job.
+    pub(crate) index: usize,
+    /// The inner step model.
+    pub(crate) inner: &'a action::Step,
+    /// The parent [`Action`].
+    pub(crate) parent: &'a Action,
+}
+
+impl<'a> Deref for CompositeStep<'a> {
+    type Target = &'a action::Step;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl StepCommon for CompositeStep<'_> {
+    fn env_is_static(&self, name: &str) -> bool {
+        let env = match &self.body {
+            action::StepBody::Uses { .. } => {
+                panic!("API misuse: can't call env_is_static on a uses: step")
+            }
+            action::StepBody::Run {
+                run: _,
+                working_directory: _,
+                shell: _,
+                env,
+            } => env,
+        };
+
+        utils::env_is_static(name, &[env])
+    }
+
+    fn strategy(&self) -> Option<&Strategy> {
+        None
+    }
+}
+
+impl<'a> CompositeStep<'a> {
+    pub(crate) fn new(index: usize, inner: &'a action::Step, parent: &'a Action) -> Self {
+        Self {
+            index,
+            inner,
+            parent,
+        }
+    }
+
+    /// Returns a symbolic location for this [`Step`].
+    pub(crate) fn location(&self) -> SymbolicLocation<'a> {
+        self.parent.location().with_composite_step(self)
+    }
+
+    /// Like [`CompositeStep::location`], except with the step's `name`
+    /// key as the final path component if present.
+    pub(crate) fn location_with_name(&self) -> SymbolicLocation<'a> {
+        match self.inner.body {
+            action::StepBody::Run { .. } => self.location().with_keys(&["name".into()]),
+            _ => self.location(),
+        }
+        .annotated("this step")
+    }
+
+    /// Returns this composite step's parent [`Action`].
+    pub(crate) fn action(&self) -> &'a Action {
+        self.parent
     }
 }
 

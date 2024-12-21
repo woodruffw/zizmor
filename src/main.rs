@@ -3,7 +3,7 @@ use std::{io::stdout, process::ExitCode};
 use annotate_snippets::{Level, Renderer};
 use anstream::{eprintln, stream::IsTerminal};
 use anyhow::{anyhow, Context, Result};
-use audit::WorkflowAudit;
+use audit::{Audit, AuditInput};
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::{Parser, ValueEnum};
 use clap_verbosity_flag::InfoLevel;
@@ -12,7 +12,7 @@ use finding::{Confidence, Persona, Severity};
 use indicatif::ProgressStyle;
 use models::Uses;
 use owo_colors::OwoColorize;
-use registry::{AuditRegistry, FindingRegistry, WorkflowRegistry};
+use registry::{AuditRegistry, FindingRegistry, InputRegistry};
 use state::AuditState;
 use tracing::{info_span, instrument, Span};
 use tracing_indicatif::{span_ext::IndicatifSpanExt, IndicatifLayer};
@@ -124,8 +124,8 @@ fn tip(err: impl AsRef<str>, tip: impl AsRef<str>) -> String {
 }
 
 #[instrument(skip_all)]
-fn collect_inputs(inputs: &[String], state: &AuditState) -> Result<WorkflowRegistry> {
-    let mut workflow_registry = WorkflowRegistry::new();
+fn collect_inputs(inputs: &[String], state: &AuditState) -> Result<InputRegistry> {
+    let mut workflow_registry = InputRegistry::new();
 
     for input in inputs {
         let input_path = Utf8Path::new(input);
@@ -190,7 +190,7 @@ fn collect_inputs(inputs: &[String], state: &AuditState) -> Result<WorkflowRegis
             })?;
 
             for workflow in client.fetch_workflows(&slug)? {
-                workflow_registry.register(workflow)?;
+                workflow_registry.register_workflow(workflow)?;
             }
         }
     }
@@ -236,7 +236,7 @@ fn run() -> Result<ExitCode> {
     let mut audit_registry = AuditRegistry::new();
     macro_rules! register_audit {
         ($rule:path) => {{
-            use crate::audit::Audit as _;
+            use crate::audit::AuditCore as _;
             // HACK: https://github.com/rust-lang/rust/issues/48067
             use $rule as base;
             match base::new(audit_state.clone()) {
@@ -275,12 +275,16 @@ fn run() -> Result<ExitCode> {
         for (_, workflow) in workflow_registry.iter_workflows() {
             Span::current().pb_set_message(workflow.key.filename());
             for (name, audit) in audit_registry.iter_workflow_audits() {
-                results.extend(audit.audit(workflow).with_context(|| {
-                    format!(
-                        "{name} failed on {workflow}",
-                        workflow = workflow.filename()
-                    )
-                })?);
+                results.extend(
+                    audit
+                        .audit(AuditInput::Workflow(workflow))
+                        .with_context(|| {
+                            format!(
+                                "{name} failed on {workflow}",
+                                workflow = workflow.filename()
+                            )
+                        })?,
+                );
                 Span::current().pb_inc(1);
             }
 

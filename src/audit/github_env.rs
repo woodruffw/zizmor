@@ -1,4 +1,4 @@
-use super::{audit_meta, WorkflowAudit};
+use super::{audit_meta, Audit};
 use crate::finding::{Confidence, Finding, Severity};
 use crate::models::Step;
 use crate::state::AuditState;
@@ -127,7 +127,7 @@ impl GitHubEnv {
     }
 }
 
-impl WorkflowAudit for GitHubEnv {
+impl Audit for GitHubEnv {
     fn new(_: AuditState) -> anyhow::Result<Self>
     where
         Self: Sized,
@@ -199,7 +199,7 @@ impl WorkflowAudit for GitHubEnv {
 #[cfg(test)]
 mod tests {
     use crate::audit::github_env::{GitHubEnv, GITHUB_ENV_WRITE_CMD};
-    use crate::audit::WorkflowAudit;
+    use crate::audit::Audit;
     use crate::state::AuditState;
 
     #[test]

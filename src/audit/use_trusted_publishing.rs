@@ -4,7 +4,7 @@ use anyhow::Ok;
 use github_actions_models::{common::EnvValue, workflow::job::StepBody};
 use indexmap::IndexMap;
 
-use super::{audit_meta, WorkflowAudit};
+use super::{audit_meta, Audit};
 use crate::{
     finding::{Confidence, Severity},
     models::Uses,
@@ -66,7 +66,7 @@ impl UseTrustedPublishing {
     }
 }
 
-impl WorkflowAudit for UseTrustedPublishing {
+impl Audit for UseTrustedPublishing {
     fn new(state: AuditState) -> anyhow::Result<Self> {
         Ok(Self { _state: state })
     }

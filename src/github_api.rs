@@ -19,7 +19,7 @@ use tracing::instrument;
 
 use crate::{
     models::{RepositoryUses, Workflow},
-    registry::WorkflowKey,
+    registry::InputKey,
     utils::PipeSelf,
 };
 
@@ -325,7 +325,7 @@ impl Client {
 
             workflows.push(Workflow::from_string(
                 contents,
-                WorkflowKey::remote(slug, file.path)?,
+                InputKey::remote(slug, file.path)?,
             )?);
         }
 

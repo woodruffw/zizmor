@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::{audit_meta, WorkflowAudit};
+use super::{audit_meta, Audit};
 use crate::finding::{Confidence, Finding, Severity};
 use crate::models::Workflow;
 use crate::state::AuditState;
@@ -13,7 +13,7 @@ audit_meta!(
     "use of fundamentally insecure workflow trigger"
 );
 
-impl WorkflowAudit for DangerousTriggers {
+impl Audit for DangerousTriggers {
     fn new(_: AuditState) -> Result<Self> {
         Ok(Self)
     }
