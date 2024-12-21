@@ -27,8 +27,9 @@ configuration files in the following order of precedence:
    explicitly, the config file does *not* need to be named `zizmor.yml`.
 1. `${CWD}/.github/zizmor.yml`
 1. `${CWD}/zizmor.yml`
+1. `${CWD}/.zizmor.yml`
 
-For the last two discovery methods, `${CWD}` is the current working directory,
+For the folder-tree-based discovery methods, `${CWD}` is the current working directory,
 i.e. the directory that `zizmor` was executed from.
 
 Only one configuration file is ever loaded. In other words: if both
@@ -59,7 +60,7 @@ where `filename.yml` is the base filename of the workflow, and `line` and
 location to ignore. If one or both are absent, then the rule applies to the
 entire file or entire line.
 
-By example, here is a configuration file with two different audit ignore
+For example, here is a configuration file with two different audit ignore
 rule groups:
 
 ```yaml title="zizmor.yml"
