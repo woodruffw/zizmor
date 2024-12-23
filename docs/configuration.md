@@ -59,7 +59,11 @@ where `filename.yml` is the base filename of the workflow, and `line` and
 location to ignore. If one or both are absent, then the rule applies to the
 entire file or entire line.
 
-By example, here is a configuration file with two different audit ignore
+!!! important
+
+    Composite action findings cannot be ignored via `zizmor.yml` currently.
+
+For example, here is a configuration file with two different audit ignore
 rule groups:
 
 ```yaml title="zizmor.yml"

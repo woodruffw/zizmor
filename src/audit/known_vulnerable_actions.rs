@@ -14,7 +14,7 @@ use crate::{
     state::AuditState,
 };
 
-use super::{audit_meta, WorkflowAudit};
+use super::{audit_meta, Audit};
 
 pub(crate) struct KnownVulnerableActions {
     client: github_api::Client,
@@ -120,7 +120,7 @@ impl KnownVulnerableActions {
     }
 }
 
-impl WorkflowAudit for KnownVulnerableActions {
+impl Audit for KnownVulnerableActions {
     fn new(state: AuditState) -> anyhow::Result<Self>
     where
         Self: Sized,

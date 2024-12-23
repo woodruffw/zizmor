@@ -4,7 +4,7 @@ use std::collections::{hash_map::Entry, HashMap};
 
 use crate::{
     finding::{Finding, Location, Severity},
-    registry::{FindingRegistry, WorkflowKey, WorkflowRegistry},
+    registry::{FindingRegistry, InputKey, InputRegistry},
 };
 use annotate_snippets::{Level, Renderer, Snippet};
 use anstream::{print, println};
@@ -24,12 +24,12 @@ impl From<&Severity> for Level {
 }
 
 pub(crate) fn finding_snippet<'w>(
-    registry: &'w WorkflowRegistry,
+    registry: &'w InputRegistry,
     finding: &'w Finding<'w>,
 ) -> Vec<Snippet<'w>> {
     // Our finding might span multiple workflows, so we need to group locations
     // by their enclosing workflow to generate each snippet correctly.
-    let mut locations_by_workflow: HashMap<&WorkflowKey, Vec<&Location<'w>>> = HashMap::new();
+    let mut locations_by_workflow: HashMap<&InputKey, Vec<&Location<'w>>> = HashMap::new();
     for location in &finding.locations {
         match locations_by_workflow.entry(location.symbolic.key) {
             Entry::Occupied(mut e) => {
@@ -42,14 +42,14 @@ pub(crate) fn finding_snippet<'w>(
     }
 
     let mut snippets = vec![];
-    for (workflow_key, locations) in locations_by_workflow {
-        let workflow = registry.get_workflow(workflow_key);
+    for (input_key, locations) in locations_by_workflow {
+        let input = registry.get_input(input_key);
 
         snippets.push(
-            Snippet::source(workflow.document.source())
+            Snippet::source(input.document().source())
                 .fold(true)
                 .line_start(1)
-                .origin(workflow.link.as_deref().unwrap_or(workflow_key.path()))
+                .origin(input.link().unwrap_or(input_key.path()))
                 .annotations(locations.iter().map(|loc| {
                     let annotation = match loc.symbolic.link {
                         Some(ref link) => link,
@@ -66,7 +66,7 @@ pub(crate) fn finding_snippet<'w>(
     snippets
 }
 
-pub(crate) fn render_findings(registry: &WorkflowRegistry, findings: &FindingRegistry) {
+pub(crate) fn render_findings(registry: &InputRegistry, findings: &FindingRegistry) {
     for finding in findings.findings() {
         render_finding(registry, finding);
         println!();
@@ -136,7 +136,7 @@ pub(crate) fn render_findings(registry: &WorkflowRegistry, findings: &FindingReg
     }
 }
 
-fn render_finding(registry: &WorkflowRegistry, finding: &Finding) {
+fn render_finding(registry: &InputRegistry, finding: &Finding) {
     let link = Link::new(finding.ident, finding.url).to_string();
     let confidence = format!(
         "audit confidence → {:?}",

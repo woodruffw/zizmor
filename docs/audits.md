@@ -295,7 +295,7 @@ Use [encrypted secrets] instead of hardcoded credentials.
 
 | Type     | Examples              | Introduced in | Works offline  | Enabled by default |
 |----------|-----------------------|---------------|----------------|--------------------|
-| Workflow  | [impostor-commit.yml] | v0.1.0        | ❌             | ✅                 |
+| Workflow, Action  | [impostor-commit.yml] | v0.1.0        | ❌             | ✅                 |
 
 [impostor-commit.yml]: https://github.com/woodruffw/gha-hazmat/blob/main/.github/workflows/impostor-commit.yml
 
@@ -360,6 +360,7 @@ the action if one is available, or remove the action's usage entirely.
 | Type     | Examples            | Introduced in | Works offline  | Enabled by default |
 |----------|---------------------|---------------|----------------|--------------------|
 | Workflow  | [ref-confusion.yml] | v0.1.0        | ❌             | ✅                 |
+
 
 [ref-confusion.yml]: https://github.com/woodruffw/gha-hazmat/blob/main/.github/workflows/ref-confusion.yml
 
@@ -431,7 +432,7 @@ there are steps you can take to minimize their risk:
 
 | Type     | Examples                 | Introduced in | Works offline  | Enabled by default |
 |----------|--------------------------|---------------|----------------|--------------------|
-| Workflow  | [template-injection.yml] | v0.1.0        | ✅             | ✅                 |
+| Workflow, Action  | [template-injection.yml] | v0.1.0        | ✅             | ✅                 |
 
 [template-injection.yml]: https://github.com/woodruffw/gha-hazmat/blob/main/.github/workflows/template-injection.yml
 

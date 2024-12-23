@@ -3,16 +3,16 @@ use std::{io::stdout, process::ExitCode};
 use annotate_snippets::{Level, Renderer};
 use anstream::{eprintln, stream::IsTerminal};
 use anyhow::{anyhow, Context, Result};
-use audit::WorkflowAudit;
+use audit::Audit;
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::{Parser, ValueEnum};
 use clap_verbosity_flag::InfoLevel;
 use config::Config;
 use finding::{Confidence, Persona, Severity};
 use indicatif::ProgressStyle;
-use models::Uses;
+use models::{Action, Uses};
 use owo_colors::OwoColorize;
-use registry::{AuditRegistry, FindingRegistry, WorkflowRegistry};
+use registry::{AuditRegistry, FindingRegistry, InputRegistry};
 use state::AuditState;
 use tracing::{info_span, instrument, Span};
 use tracing_indicatif::{span_ext::IndicatifSpanExt, IndicatifLayer};
@@ -96,12 +96,18 @@ struct App {
     #[arg(long)]
     cache_dir: Option<Utf8PathBuf>,
 
+    /// Control which kinds of inputs are collected for auditing.
+    ///
+    /// By default, all workflows and composite actions are collected.
+    #[arg(long, value_enum, default_value_t)]
+    collect: CollectionMode,
+
     /// The inputs to audit.
     ///
-    /// These can be individual workflow filenames, entire directories,
-    /// or a `user/repo` slug for a GitHub repository. In the latter case,
-    /// a `@ref` can be appended to audit the repository at a particular
-    /// git reference state.
+    /// These can be individual workflow filenames, action definitions
+    /// (typically `action.yml`), entire directories, or a `user/repo` slug
+    /// for a GitHub repository. In the latter case, a `@ref` can be appended
+    /// to audit the repository at a particular git reference state.
     #[arg(required = true)]
     inputs: Vec<String>,
 }
@@ -114,6 +120,28 @@ pub(crate) enum OutputFormat {
     Sarif,
 }
 
+/// How `zizmor` collects inputs from local and remote repository sources.
+#[derive(Copy, Clone, Debug, Default, ValueEnum)]
+pub(crate) enum CollectionMode {
+    /// Collect all supported inputs.
+    #[default]
+    All,
+    /// Collect only workflow definitions.
+    WorkflowsOnly,
+    /// Collect only action definitions (i.e. `action.yml`).
+    ActionsOnly,
+}
+
+impl CollectionMode {
+    pub(crate) fn workflows(&self) -> bool {
+        matches!(self, CollectionMode::All | CollectionMode::WorkflowsOnly)
+    }
+
+    pub(crate) fn actions(&self) -> bool {
+        matches!(self, CollectionMode::All | CollectionMode::ActionsOnly)
+    }
+}
+
 fn tip(err: impl AsRef<str>, tip: impl AsRef<str>) -> String {
     let message = Level::Error
         .title(err.as_ref())
@@ -123,83 +151,152 @@ fn tip(err: impl AsRef<str>, tip: impl AsRef<str>) -> String {
     format!("{}", renderer.render(message))
 }
 
-#[instrument(skip_all)]
-fn collect_inputs(inputs: &[String], state: &AuditState) -> Result<WorkflowRegistry> {
-    let mut workflow_registry = WorkflowRegistry::new();
+#[instrument(skip(mode, registry))]
+fn collect_from_repo_dir(
+    repo_dir: &Utf8Path,
+    mode: &CollectionMode,
+    registry: &mut InputRegistry,
+) -> Result<()> {
+    // The workflow directory might not exist if we're collecting from
+    // a repository that only contains actions.
+    if mode.workflows() {
+        let workflow_dir = if repo_dir.ends_with(".github/workflows") {
+            repo_dir.into()
+        } else {
+            repo_dir.join(".github/workflows")
+        };
 
-    for input in inputs {
-        let input_path = Utf8Path::new(input);
-        if input_path.is_file() {
-            workflow_registry
-                .register_by_path(input_path)
-                .with_context(|| format!("failed to register workflow: {input_path}"))?;
-        } else if input_path.is_dir() {
-            let mut absolute = input_path.canonicalize_utf8()?;
-            if !absolute.ends_with(".github/workflows") {
-                absolute.push(".github/workflows")
-            }
-
-            for entry in absolute.read_dir_utf8()? {
+        if workflow_dir.is_dir() {
+            for entry in workflow_dir.read_dir_utf8()? {
                 let entry = entry?;
-                let workflow_path = entry.path();
-                match workflow_path.extension() {
+                let input_path = entry.path();
+                match input_path.extension() {
                     Some(ext) if ext == "yml" || ext == "yaml" => {
-                        workflow_registry
-                            .register_by_path(workflow_path)
-                            .with_context(|| {
-                                format!("failed to register workflow: {workflow_path}")
-                            })?;
+                        registry
+                            .register_by_path(input_path)
+                            .with_context(|| format!("failed to register input: {input_path}"))?;
                     }
                     _ => continue,
                 }
             }
         } else {
-            // If this input isn't a file or directory, it's probably an
-            // `owner/repo(@ref)?` slug.
+            tracing::warn!("{workflow_dir} not found while collecting workflows")
+        }
+    }
 
-            // Our pre-existing `uses: <slug>` parser does 90% of the work for us.
-            let Some(Uses::Repository(slug)) = Uses::from_step(input) else {
-                return Err(anyhow!(tip(
-                    format!("invalid input: {input}"),
-                    format!(
-                        "pass a single {file}, {directory}, or entire repo by {slug} slug",
-                        file = "file".green(),
-                        directory = "directory".green(),
-                        slug = "owner/repo".green()
-                    )
-                )));
-            };
+    if mode.actions() {
+        for entry in repo_dir.read_dir_utf8()? {
+            let entry = entry?;
+            let entry_path = entry.path();
 
-            // We don't expect subpaths here.
-            if slug.subpath.is_some() {
-                return Err(anyhow!(tip(
-                    "invalid GitHub repository reference",
-                    "pass owner/repo or owner/repo@ref"
-                )));
-            }
-
-            let client = state.github_client().ok_or_else(|| {
-                anyhow!(tip(
-                    format!("can't retrieve repository: {input}", input = input.green()),
-                    format!(
-                        "try removing {offline} or passing {gh_token}",
-                        offline = "--offline".yellow(),
-                        gh_token = "--gh-token <TOKEN>".yellow(),
-                    )
-                ))
-            })?;
-
-            for workflow in client.fetch_workflows(&slug)? {
-                workflow_registry.register(workflow)?;
+            if entry_path.is_file()
+                && matches!(entry_path.file_name(), Some("action.yml" | "action.yaml"))
+            {
+                let action = Action::from_file(entry_path)?;
+                registry.register_input(action.into())?;
+            } else if entry_path.is_dir() && !entry_path.ends_with(".github/workflows") {
+                // Recurse and limit the collection mode to only actions.
+                collect_from_repo_dir(entry_path, &CollectionMode::ActionsOnly, registry)?;
             }
         }
     }
 
-    if workflow_registry.len() == 0 {
-        return Err(anyhow!("no workflow files collected"));
+    Ok(())
+}
+
+fn collect_from_repo_slug(
+    input: &str,
+    mode: &CollectionMode,
+    state: &AuditState,
+    registry: &mut InputRegistry,
+) -> Result<()> {
+    // Our pre-existing `uses: <slug>` parser does 90% of the work for us.
+    let Some(Uses::Repository(slug)) = Uses::from_step(input) else {
+        return Err(anyhow!(tip(
+            format!("invalid input: {input}"),
+            format!(
+                "pass a single {file}, {directory}, or entire repo by {slug} slug",
+                file = "file".green(),
+                directory = "directory".green(),
+                slug = "owner/repo".green()
+            )
+        )));
+    };
+
+    // We don't expect subpaths here.
+    if slug.subpath.is_some() {
+        return Err(anyhow!(tip(
+            "invalid GitHub repository reference",
+            "pass owner/repo or owner/repo@ref"
+        )));
     }
 
-    Ok(workflow_registry)
+    let client = state.github_client().ok_or_else(|| {
+        anyhow!(tip(
+            format!("can't retrieve repository: {input}", input = input.green()),
+            format!(
+                "try removing {offline} or passing {gh_token}",
+                offline = "--offline".yellow(),
+                gh_token = "--gh-token <TOKEN>".yellow(),
+            )
+        ))
+    })?;
+
+    if matches!(mode, CollectionMode::WorkflowsOnly) {
+        // Performance: if we're *only* collecting workflows, then we
+        // can save ourselves a full repo download and only fetch the
+        // repo's workflow files.
+        for workflow in client.fetch_workflows(&slug)? {
+            registry.register_input(workflow.into())?;
+        }
+    } else {
+        let inputs = client.fetch_audit_inputs(&slug)?;
+
+        tracing::info!(
+            "collected {len} inputs from {owner}/{repo}",
+            len = inputs.len(),
+            owner = slug.owner,
+            repo = slug.repo
+        );
+
+        for input in client.fetch_audit_inputs(&slug)? {
+            registry.register_input(input)?;
+        }
+    }
+
+    Ok(())
+}
+
+#[instrument(skip_all)]
+fn collect_inputs(
+    inputs: &[String],
+    mode: &CollectionMode,
+    state: &AuditState,
+) -> Result<InputRegistry> {
+    let mut registry = InputRegistry::new();
+
+    for input in inputs {
+        let input_path = Utf8Path::new(input);
+        if input_path.is_file() {
+            registry
+                .register_by_path(input_path)
+                .with_context(|| format!("failed to register input: {input_path}"))?;
+        } else if input_path.is_dir() {
+            // TODO: walk directory to discover composite actions.
+            let absolute = input_path.canonicalize_utf8()?;
+            collect_from_repo_dir(&absolute, mode, &mut registry)?;
+        } else {
+            // If this input isn't a file or directory, it's probably an
+            // `owner/repo(@ref)?` slug.
+            collect_from_repo_slug(input, mode, state, &mut registry)?;
+        }
+    }
+
+    if registry.len() == 0 {
+        return Err(anyhow!("no inputs collected"));
+    }
+
+    Ok(registry)
 }
 
 fn run() -> Result<ExitCode> {
@@ -229,18 +326,18 @@ fn run() -> Result<ExitCode> {
         .init();
 
     let audit_state = AuditState::new(&app);
-    let workflow_registry = collect_inputs(&app.inputs, &audit_state)?;
+    let registry = collect_inputs(&app.inputs, &app.collect, &audit_state)?;
 
     let config = Config::new(&app)?;
 
     let mut audit_registry = AuditRegistry::new();
     macro_rules! register_audit {
         ($rule:path) => {{
-            use crate::audit::Audit as _;
+            use crate::audit::AuditCore as _;
             // HACK: https://github.com/rust-lang/rust/issues/48067
             use $rule as base;
             match base::new(audit_state.clone()) {
-                Ok(audit) => audit_registry.register_workflow_audit(base::ident(), Box::new(audit)),
+                Ok(audit) => audit_registry.register_audit(base::ident(), Box::new(audit)),
                 Err(e) => tracing::warn!("skipping {audit}: {e}", audit = base::ident()),
             }
         }};
@@ -265,36 +362,31 @@ fn run() -> Result<ExitCode> {
     {
         // Note: block here so that we drop the span here at the right time.
         let span = info_span!("audit");
-        span.pb_set_length((workflow_registry.len() * audit_registry.len()) as u64);
+        span.pb_set_length((registry.len() * audit_registry.len()) as u64);
         span.pb_set_style(
             &ProgressStyle::with_template("[{elapsed_precise}] {bar:!30.cyan/blue} {msg}").unwrap(),
         );
 
         let _guard = span.enter();
 
-        for (_, workflow) in workflow_registry.iter_workflows() {
-            Span::current().pb_set_message(workflow.key.filename());
-            for (name, audit) in audit_registry.iter_workflow_audits() {
-                results.extend(audit.audit(workflow).with_context(|| {
-                    format!(
-                        "{name} failed on {workflow}",
-                        workflow = workflow.filename()
-                    )
+        for (_, input) in registry.iter_inputs() {
+            Span::current().pb_set_message(input.key().filename());
+            for (name, audit) in audit_registry.iter_audits() {
+                results.extend(audit.audit(input).with_context(|| {
+                    format!("{name} failed on {input}", input = input.key().filename())
                 })?);
                 Span::current().pb_inc(1);
             }
-
-            tracing::info!("🌈 completed {workflow}", workflow = workflow.key.path());
+            tracing::info!("🌈 completed {input}", input = input.key().path());
         }
     }
 
     match app.format {
-        OutputFormat::Plain => render::render_findings(&workflow_registry, &results),
+        OutputFormat::Plain => render::render_findings(&registry, &results),
         OutputFormat::Json => serde_json::to_writer_pretty(stdout(), &results.findings())?,
-        OutputFormat::Sarif => serde_json::to_writer_pretty(
-            stdout(),
-            &sarif::build(&workflow_registry, results.findings()),
-        )?,
+        OutputFormat::Sarif => {
+            serde_json::to_writer_pretty(stdout(), &sarif::build(&registry, results.findings()))?
+        }
     };
 
     if app.no_exit_codes || matches!(app.format, OutputFormat::Sarif) {

@@ -11,7 +11,7 @@ use std::ops::Deref;
 use anyhow::{anyhow, Result};
 use github_actions_models::workflow::Job;
 
-use super::{audit_meta, WorkflowAudit};
+use super::{audit_meta, Audit};
 use crate::{
     finding::{Confidence, Severity},
     github_api,
@@ -47,7 +47,7 @@ impl RefConfusion {
     }
 }
 
-impl WorkflowAudit for RefConfusion {
+impl Audit for RefConfusion {
     fn new(state: AuditState) -> anyhow::Result<Self>
     where
         Self: Sized,

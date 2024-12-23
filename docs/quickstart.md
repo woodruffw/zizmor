@@ -16,36 +16,47 @@ You should see something like this:
 
 Here are some different ways you can run `zizmor` locally:
 
-=== "On one or more files"
+=== "On one or more workflows"
 
-    You can run `zizmor` on one or more workflows as explicit inputs:
+    You can run `zizmor` on one or more workflows or composite actions as
+    explicit inputs:
 
     ```bash
-    zizmor ci.yml tests.yml lint.yml
+    zizmor ci.yml tests.yml lint.yml action.yml
     ```
 
     These can be in any directory as well:
 
     ```
-    zizmor ./subdir/ci.yml ../sibling/tests.yml
+    zizmor ./subdir/ci.yml ../sibling/tests.yml ./action/action.yml
     ```
 
-=== "On one or more directories"
+=== "On one or more local repositories"
 
-    If you have multiple workflows in a single directory, `zizmor` will
-    discover them:
+    !!! tip
+
+        Composite action support was added in v1.0.0.
+
+    !!! tip
+
+        Pass `--collect=workflows-only` to disable collecting composite actions.
+
+    When given one or more local directories, `zizmor` will treat each as a
+    GitHub repository and attempt to discover workflows defined under the
+    `.github/workflows` subdirectory for each. `zizmor` will also walk each
+    directory to find composite action definitions (`action.yml` in any
+    subdirectory).
 
     ```bash
-    # somewhere/ contains ci.yml and tests.yml
-    zizmor somewhere/
-    ```
+    # repo-a/ contains .github/workflows/{ci,tests}.yml
+    # as well as custom-action/action.yml
+    zizmor repo-a/
 
-    Moreover, if the specified directory contains a `.github/workflows`
-    subdirectory, `zizmor` will discover workflows there:
+    # or with multiple directories
+    zizmor repo-a/ ../../repo-b/
 
-    ```bash
-    # my-local-repo/ contains .github/workflows/{ci,tests}.yml
-    zizmor my-local-repo/
+    # collect only workflows, not composite actions
+    zizmor --collect=workflows-only
     ```
 
 === "On one or more remote repositories"
@@ -55,11 +66,15 @@ Here are some different ways you can run `zizmor` locally:
         Private repositories can also be audited remotely, as long
         as your GitHub API token has sufficient permissions.
 
-    `zizmor` can also fetch workflows directly from GitHub, if given a
-    GitHub API token via `GH_TOKEN` or `--gh-token`:
+    !!! tip
+
+        Pass `--collect=workflows-only` to disable collecting composite actions.
+
+    `zizmor` can also fetch workflows and actions directly from GitHub, if
+    given a GitHub API token via `GH_TOKEN` or `--gh-token`:
 
     ```bash
-    # audit all workflows in woodruffw/zizmor
+    # audit all workflows and composite actions in woodruffw/zizmor
     # assumes you have `gh` installed
     zizmor --gh-token=$(gh auth token) woodruffw/zizmor
     ```

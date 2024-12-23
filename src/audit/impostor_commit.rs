@@ -8,7 +8,7 @@
 use anyhow::{anyhow, Result};
 use github_actions_models::workflow::Job;
 
-use super::{audit_meta, WorkflowAudit};
+use super::{audit_meta, Audit};
 use crate::{
     finding::{Confidence, Finding, Severity},
     github_api::{self, ComparisonStatus},
@@ -112,7 +112,7 @@ impl ImpostorCommit {
     }
 }
 
-impl WorkflowAudit for ImpostorCommit {
+impl Audit for ImpostorCommit {
     fn new(state: AuditState) -> Result<Self> {
         if state.no_online_audits {
             return Err(anyhow!("offline audits only requested"));
@@ -169,6 +169,28 @@ impl WorkflowAudit for ImpostorCommit {
                     }
                 }
             }
+        }
+
+        Ok(findings)
+    }
+
+    fn audit_composite_step<'a>(
+        &self,
+        step: &super::CompositeStep<'a>,
+    ) -> Result<Vec<Finding<'a>>> {
+        let mut findings = vec![];
+        let Some(Uses::Repository(uses)) = step.uses() else {
+            return Ok(findings);
+        };
+
+        if self.impostor(uses)? {
+            findings.push(
+                Self::finding()
+                    .severity(Severity::High)
+                    .confidence(Confidence::High)
+                    .add_location(step.location().primary().annotated(IMPOSTOR_ANNOTATION))
+                    .build(step.action())?,
+            );
         }
 
         Ok(findings)

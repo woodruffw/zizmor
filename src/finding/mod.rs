@@ -10,8 +10,8 @@ use serde::Serialize;
 use terminal_link::Link;
 
 use crate::{
-    models::{Job, Step, Workflow},
-    registry::WorkflowKey,
+    models::{CompositeStep, Job, Step},
+    registry::InputKey,
 };
 
 pub(crate) mod locate;
@@ -124,7 +124,7 @@ impl<'w> Route<'w> {
 #[derive(Serialize, Clone, Debug)]
 pub(crate) struct SymbolicLocation<'w> {
     /// The unique ID of the workflow, as it appears in the workflow registry.
-    pub(crate) key: &'w WorkflowKey,
+    pub(crate) key: &'w InputKey,
 
     /// An annotation for this location.
     pub(crate) annotation: String,
@@ -165,6 +165,10 @@ impl<'w> SymbolicLocation<'w> {
         self.with_keys(&["steps".into(), step.index.into()])
     }
 
+    pub(crate) fn with_composite_step(&self, step: &CompositeStep<'w>) -> SymbolicLocation<'w> {
+        self.with_keys(&["runs".into(), "steps".into(), step.index.into()])
+    }
+
     /// Adds a human-readable annotation to the current `SymbolicLocation`.
     pub(crate) fn annotated(mut self, annotation: impl Into<String>) -> SymbolicLocation<'w> {
         self.annotation = annotation.into();
@@ -184,8 +188,11 @@ impl<'w> SymbolicLocation<'w> {
     }
 
     /// Concretize this `SymbolicLocation`, consuming it in the process.
-    pub(crate) fn concretize(self, workflow: &'w Workflow) -> Result<Location<'w>> {
-        let feature = Locator::new().concretize(workflow, &self)?;
+    pub(crate) fn concretize(
+        self,
+        document: &'w impl AsRef<yamlpath::Document>,
+    ) -> Result<Location<'w>> {
+        let feature = Locator::new().concretize(document, &self)?;
 
         Ok(Location {
             symbolic: self,
@@ -343,11 +350,11 @@ impl<'w> FindingBuilder<'w> {
         self
     }
 
-    pub(crate) fn build(self, workflow: &'w Workflow) -> Result<Finding<'w>> {
+    pub(crate) fn build(self, document: &'w impl AsRef<yamlpath::Document>) -> Result<Finding<'w>> {
         let locations = self
             .locations
             .iter()
-            .map(|l| l.clone().concretize(workflow))
+            .map(|l| l.clone().concretize(document))
             .collect::<Result<Vec<_>>>()?;
 
         if !locations.iter().any(|l| l.symbolic.primary) {

@@ -4,6 +4,72 @@ description: Usage recipes for running zizmor locally and in CI/CD.
 
 # Usage Recipes
 
+## Input collection
+
+Before auditing, `zizmor` performs an input collection phase.
+
+There are three input sources that `zizmor` knows about:
+
+1. Individual workflow and composite action files, e.g. `foo.yml` and
+   `my-action/action.yml`;
+2. "Local" GitHub repositories in the form of a directory, e.g. `my-repo/`;
+3. "Remote" GitHub repositories in the form of a "slug", e.g.
+   `pypa/sampleproject`.
+
+    !!! tip
+
+        By default, a remote repository will be audited from the `HEAD`
+        of the default branch. To control this, you can append a `git`
+        reference to the slug:
+
+        ```bash
+        # audit at HEAD on the default branch
+        zizmor example/example
+
+        # audit at branch or tag `v1`
+        zizmor example/example@v1
+
+        # audit at a specific SHA
+        zizmor example/example@abababab...
+        ```
+
+    !!! tip
+
+        Remote auditing requires Internet access and a GitHub API token.
+        See [Operating Modes](#operating-modes) for more information.
+
+`zizmor` can audit multiple inputs in the same run, and different input
+sources can be mixed and matched:
+
+```bash
+# audit a single local workflow, an entire local repository, and
+# a remote repository all in the same run
+zizmor ../example.yml ../other-repo/ example/example
+```
+
+When auditing local and/or remote repositories, `zizmor` will collect both
+workflows (e.g. `.github/workflows/ci.yml`) **and** action definitions
+(e.g. `custom-action/foo.yml`) by default. To disable one or the other,
+you can use the `--collect=...` option.
+
+```bash
+# collect everything (the default)
+zizmor --collect=all example/example
+
+# collect only workflows
+zizmor --collect=workflows-only example/example
+
+# collect only actions
+zizmor --collect=actions-only example/example
+```
+
+!!! tip
+
+    `--collect=...` only controls input collection from repository input
+    sources. In other words, `zizmor --collect=actions-only workflow.yml`
+    *will* audit `workflow.yml`, since it was passed explicitly and not
+    collected indirectly.
+
 ## Operating Modes
 
 Some of `zizmor`'s audits require access to GitHub's API.
@@ -98,8 +164,8 @@ sensitive `zizmor`'s analyses are:
 
     This persona is ideal for finding things that are a good idea
     to clean up or resolve, but are likely not immediately actionable
-    security findings (or are actionable, but indicate a intentional
-    security decision by the workflow author).
+    security findings (or are actionable, but suggest a intentional
+    security decision by the workflow/action author).
 
     For example, using the pedantic persona will flag the following
     with an `unpinned-uses` finding, since it uses a symbolic reference

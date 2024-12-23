@@ -3,9 +3,11 @@
 //! Build on synchronous reqwest to avoid octocrab's need to taint
 //! the whole codebase with async.
 
-use std::path::Path;
+use std::{io::Read, ops::Deref, path::Path};
 
 use anyhow::{anyhow, Result};
+use camino::Utf8Path;
+use flate2::read::GzDecoder;
 use http_cache_reqwest::{
     CACacheManager, Cache, CacheMode, CacheOptions, HttpCache, HttpCacheOptions,
 };
@@ -15,11 +17,13 @@ use reqwest::{
 };
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use serde::{de::DeserializeOwned, Deserialize};
+use tar::Archive;
 use tracing::instrument;
 
 use crate::{
-    models::{RepositoryUses, Workflow},
-    registry::WorkflowKey,
+    audit::AuditInput,
+    models::{Action, RepositoryUses, Workflow},
+    registry::InputKey,
     utils::PipeSelf,
 };
 
@@ -270,7 +274,11 @@ impl Client {
             .map_err(Into::into)
     }
 
-    /// Return temporary files for all workflows listed in the repo.
+    /// Collect all workflows (and only workflows) defined in the given remote
+    /// repository slug.
+    ///
+    /// This is an optimized variant of `fetch_audit_inputs` for the workflow-only
+    /// collection case.
     #[instrument(skip(self))]
     #[tokio::main]
     pub(crate) async fn fetch_workflows(&self, slug: &RepositoryUses) -> Result<Vec<Workflow>> {
@@ -325,11 +333,72 @@ impl Client {
 
             workflows.push(Workflow::from_string(
                 contents,
-                WorkflowKey::remote(slug, file.path)?,
+                InputKey::remote(slug, file.path)?,
             )?);
         }
 
         Ok(workflows)
+    }
+
+    /// Fetch all auditable inputs (both workflows and actions)
+    /// from the given remote repository slug.
+    ///
+    /// This is much slower than `fetch_workflows`, since it involves
+    /// retrieving the entire repository archive and decompressing it.
+    #[instrument(skip(self))]
+    #[tokio::main]
+    pub(crate) async fn fetch_audit_inputs(
+        &self,
+        slug: &RepositoryUses,
+    ) -> Result<Vec<AuditInput>> {
+        let mut inputs = vec![];
+
+        let url = format!(
+            "{api_base}/repos/{owner}/{repo}/tarball/{git_ref}",
+            api_base = self.api_base,
+            owner = slug.owner,
+            repo = slug.repo,
+            git_ref = slug.git_ref.unwrap_or("HEAD")
+        );
+        tracing::debug!("fetching repo: {url}");
+
+        // TODO: Could probably make this slightly faster by
+        // streaming asynchronously into the decompression,
+        // probably with the async-compression crate.
+        let contents = self.http.get(url).send().await?.bytes().await?;
+        let tar = GzDecoder::new(contents.deref());
+
+        let mut archive = Archive::new(tar);
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+
+            // GitHub's tarballs contain entries that are prefixed with
+            // `{owner}-{repo}-{ref}`, where `{ref}` has been concretized
+            // into a short hash. We strip this out to ensure that our
+            // paths look like normal paths.
+            let entry_path = entry.path()?;
+            let file_path: &Utf8Path = {
+                let mut components = entry_path.components();
+                components.next();
+                components.as_path().try_into()?
+            };
+
+            if file_path.starts_with(".github/workflows/") {
+                if matches!(file_path.extension(), Some("yml" | "yaml")) {
+                    let key = InputKey::remote(slug, file_path.to_string())?;
+                    let mut contents = String::with_capacity(entry.size() as usize);
+                    entry.read_to_string(&mut contents)?;
+                    inputs.push(Workflow::from_string(contents, key)?.into());
+                }
+            } else if matches!(file_path.file_name(), Some("action.yml" | "action.yaml")) {
+                let key = InputKey::remote(slug, file_path.to_string())?;
+                let mut contents = String::with_capacity(entry.size() as usize);
+                entry.read_to_string(&mut contents)?;
+                inputs.push(Action::from_string(contents, key)?.into());
+            }
+        }
+
+        Ok(inputs)
     }
 }
 

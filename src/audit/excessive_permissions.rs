@@ -5,7 +5,7 @@ use github_actions_models::{
     workflow::Job,
 };
 
-use super::{audit_meta, WorkflowAudit};
+use super::{audit_meta, Audit};
 use crate::{
     finding::{Confidence, Persona, Severity},
     AuditState,
@@ -43,7 +43,7 @@ pub(crate) struct ExcessivePermissions {
     pub(crate) _config: AuditState,
 }
 
-impl WorkflowAudit for ExcessivePermissions {
+impl Audit for ExcessivePermissions {
     fn new(config: AuditState) -> anyhow::Result<Self>
     where
         Self: Sized,

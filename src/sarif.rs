@@ -10,7 +10,7 @@ use serde_sarif::sarif::{
 
 use crate::{
     finding::{Finding, Location, Severity},
-    registry::WorkflowRegistry,
+    registry::InputRegistry,
 };
 
 impl From<Severity> for ResultKind {
@@ -39,7 +39,7 @@ impl From<Severity> for ResultLevel {
     }
 }
 
-pub(crate) fn build(registry: &WorkflowRegistry, findings: &[Finding]) -> Sarif {
+pub(crate) fn build(registry: &InputRegistry, findings: &[Finding]) -> Sarif {
     Sarif::builder()
         .version("2.1.0")
         .schema("https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json")
@@ -47,7 +47,7 @@ pub(crate) fn build(registry: &WorkflowRegistry, findings: &[Finding]) -> Sarif 
         .build()
 }
 
-fn build_run(registry: &WorkflowRegistry, findings: &[Finding]) -> Run {
+fn build_run(registry: &InputRegistry, findings: &[Finding]) -> Run {
     Run::builder()
         .tool(
             Tool::builder()
@@ -84,11 +84,11 @@ fn build_rule(finding: &Finding) -> ReportingDescriptor {
         .build()
 }
 
-fn build_results(registry: &WorkflowRegistry, findings: &[Finding]) -> Vec<SarifResult> {
+fn build_results(registry: &InputRegistry, findings: &[Finding]) -> Vec<SarifResult> {
     findings.iter().map(|f| build_result(registry, f)).collect()
 }
 
-fn build_result(registry: &WorkflowRegistry, finding: &Finding<'_>) -> SarifResult {
+fn build_result(registry: &InputRegistry, finding: &Finding<'_>) -> SarifResult {
     SarifResult::builder()
         .message(finding.desc)
         .rule_id(finding.ident)
@@ -113,7 +113,7 @@ fn build_result(registry: &WorkflowRegistry, finding: &Finding<'_>) -> SarifResu
 }
 
 fn build_locations<'a>(
-    registry: &WorkflowRegistry,
+    registry: &InputRegistry,
     locations: impl Iterator<Item = &'a Location<'a>>,
 ) -> Vec<SarifLocation> {
     locations
