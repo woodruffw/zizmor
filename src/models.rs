@@ -617,17 +617,22 @@ impl RepositoryUses<'_> {
     ///
     /// This is an asymmetrical match: `actions/checkout@v3` "matches"
     /// the `actions/checkout` template but not vice versa.
+    ///
+    /// Comparisons consider that GitHub does not adopt
+    /// case-sensitive URLs, hence templates like
+    /// `Actions/Checkout` and `actions/checkout`
+    /// resolve to the same Action
     pub(crate) fn matches<'a>(&self, template: impl TryInto<RepositoryUses<'a>>) -> bool {
         let Ok(other) = template.try_into() else {
             return false;
         };
 
-        self.owner == other.owner
-            && self.repo == other.repo
-            && self.subpath == other.subpath
-            && other
-                .git_ref
-                .map_or(true, |git_ref| Some(git_ref) == self.git_ref)
+        self.owner.to_lowercase() == other.owner.to_lowercase()
+            && self.repo.to_lowercase() == other.repo.to_lowercase()
+            && self.subpath.map(|s| s.to_lowercase()) == other.subpath.map(|s| s.to_lowercase())
+            && other.git_ref.map_or(true, |git_ref| {
+                Some(git_ref.to_lowercase()) == self.git_ref.map(|r| r.to_lowercase())
+            })
     }
 
     pub(crate) fn ref_is_commit(&self) -> bool {
@@ -1017,6 +1022,11 @@ mod tests {
             ("actions/checkout", "actions/checkout", true),
             ("actions/checkout/foo", "actions/checkout/foo", true),
             ("actions/checkout/foo@v3", "actions/checkout/foo@v3", true),
+            // OK: case-insensitive
+            ("actions/checkout@v3", "Actions/Checkout@v3", true),
+            ("actions/checkout/foo", "actions/checkout/Foo", true),
+            ("actions/checkout/foo@v3", "Actions/Checkout/Foo", true),
+            ("actions/checkout@v3", "actions/checkout@V3", true),
             // NOT OK: owner/repo do not match
             ("actions/checkout@v3", "foo/checkout", false),
             ("actions/checkout@v3", "actions/bar", false),
