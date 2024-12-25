@@ -84,22 +84,18 @@ impl Config {
                 // If the user didn't pass a config path explicitly with
                 // `--config`, then we attempt to discover one relative to $CWD
                 // Our procedure is to first look for `$CWD/.github/zizmor.yml`,
-                // then `$CWD/zizmor.yml`, and then bail.
+                // then `$CWD/zizmor.yml`, then `$CWD/.zizmor.yml`, and then bail.
                 let cwd = std::env::current_dir()
                     .with_context(|| "config discovery couldn't access CWD")?;
 
-                let path = cwd.join(".github").join("zizmor.yml");
-                if path.is_file() {
-                    serde_yaml::from_str(&fs::read_to_string(path)?)?
-                } else {
-                    let path = cwd.join("zizmor.yml");
+                for path in &[".github/zizmor.yml", "zizmor.yml", ".zizmor.yml"] {
+                    let path = cwd.join(path);
                     if path.is_file() {
                         serde_yaml::from_str(&fs::read_to_string(path)?)?
-                    } else {
-                        tracing::debug!("no config discovered; loading default");
-                        Config::default()
                     }
                 }
+                tracing::debug!("no config discovered; loading default");
+                Config::default()
             }
         };
 
