@@ -6,9 +6,10 @@ use anyhow::{Context, Result};
 use github_actions_models::workflow::job::StepBody;
 use regex::Regex;
 use std::cell::RefCell;
-use std::ops::Deref;
+use std::ops::{Deref, Range};
 use std::sync::LazyLock;
-use tree_sitter::Parser;
+use streaming_iterator::StreamingIterator;
+use tree_sitter::{Parser, Query, QueryCursor, QueryMatches, Tree};
 
 static GITHUB_ENV_WRITE_CMD: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"(?mi)^.+\s*>>?\s*"?%GITHUB_ENV%"?.*$"#).unwrap());
@@ -17,44 +18,89 @@ pub(crate) struct GitHubEnv {
     // NOTE: interior mutability used since Parser::parse requires &mut self
     bash_parser: RefCell<Parser>,
     pwsh_parser: RefCell<Parser>,
+
+    // cached queries
+    bash_redirect_query_span_idx: u32,
+    bash_redirect_query: Query,
+
+    bash_pipeline_query_span_idx: u32,
+    bash_pipeline_query: Query,
 }
 
 audit_meta!(GitHubEnv, "github-env", "dangerous use of GITHUB_ENV");
 
+const BASH_REDIRECT_QUERY: &str = r#"
+(redirected_statement
+ (
+   (command (command_name) @cmd (_)* @args)
+ )
+ (file_redirect (
+   [
+     (string (_ (variable_name)))
+     (expansion (variable_name))
+     (simple_expansion (variable_name))
+   ] @destination
+ ))
+ (#match? @destination "GITHUB_ENV")
+) @span
+"#;
+
+const BASH_PIPELINE_QUERY: &str = r#"
+(pipeline
+  (command
+    name: (command_name) @cmd
+    argument: [
+      (string (_ (variable_name)))
+      (expansion)
+      (simple_expansion)
+    ] @arg
+  )
+  (#match? @cmd "tee")
+  (#match? @arg "GITHUB_ENV")
+) @span
+"#;
+
 impl GitHubEnv {
-    fn bash_uses_github_env(&self, script_body: &str) -> Result<bool> {
-        let tree = &self
+    fn query<'a>(
+        &self,
+        query: &'a Query,
+        cursor: &'a mut QueryCursor,
+        tree: &'a Tree,
+        source: &'a str,
+    ) -> QueryMatches<'a, 'a, &'a [u8], &'a [u8]> {
+        cursor.matches(query, tree.root_node(), source.as_bytes())
+    }
+
+    fn bash_uses_github_env(&self, script_body: &str) -> Result<Vec<Range<usize>>> {
+        let mut cursor = QueryCursor::new();
+
+        let tree = self
             .bash_parser
             .borrow_mut()
             .parse(script_body, None)
             .context("failed to parse `run:` body as bash")?;
 
-        let mut stack = vec![tree.root_node()];
+        let queries = [
+            // matches the `foo >> $GITHUB_ENV` pattern
+            (&self.bash_redirect_query, self.bash_redirect_query_span_idx),
+            // matches the `cmd | cmd | tee $GITHUB_ENV` pattern
+            (&self.bash_pipeline_query, self.bash_pipeline_query_span_idx),
+        ];
+        let mut matching_spans = vec![];
 
-        while let Some(node) = stack.pop() {
-            // TODO: This can be refined by checking the interior nodes to ensure
-            // that the GITHUB_ENV is on the RHS.
-            if node.is_named() && (node.kind() == "file_redirect" || node.kind() == "pipeline") {
-                let tree_expansion = &script_body[node.start_byte()..node.end_byte()];
-                let targets_github_env = tree_expansion.contains("GITHUB_ENV");
-                let exploitable_redirects =
-                    tree_expansion.contains(">>") || tree_expansion.contains(">");
+        for (query, span_idx) in queries {
+            let matches = self.query(&query, &mut cursor, &tree, script_body);
 
-                // Eventually we can detect specific commands within the expansion,
-                // like tee and others
-                let piped = tree_expansion.contains("|");
-
-                if (piped || exploitable_redirects) && targets_github_env {
-                    return Ok(true);
+            matches.for_each(|mat| {
+                for cap in mat.captures {
+                    if cap.index == span_idx {
+                        matching_spans.push(cap.node.byte_range());
+                    }
                 }
-            }
-
-            for child in node.named_children(&mut node.walk()) {
-                stack.push(child);
-            }
+            });
         }
 
-        Ok(false)
+        Ok(matching_spans)
     }
 
     fn pwsh_uses_github_env(&self, script_body: &str) -> Result<bool> {
@@ -112,7 +158,10 @@ impl GitHubEnv {
 
     fn uses_github_env(&self, run_step_body: &str, shell: &str) -> anyhow::Result<bool> {
         match shell {
-            "bash" | "sh" => self.bash_uses_github_env(run_step_body),
+            "bash" | "sh" => self
+                .bash_uses_github_env(run_step_body)
+                // NOTE: discard the spans for now.
+                .map(|r| !r.is_empty()),
             "cmd" => Ok(GITHUB_ENV_WRITE_CMD.is_match(run_step_body)),
             "pwsh" | "powershell" => self.pwsh_uses_github_env(run_step_body),
             // TODO: handle python.
@@ -143,9 +192,21 @@ impl WorkflowAudit for GitHubEnv {
         pwsh_parser
             .set_language(&pwsh)
             .context("failed to load powershell parser")?;
+
+        let bash_redirect_query = Query::new(&bash.into(), BASH_REDIRECT_QUERY)?;
+        let bash_pipeline_query = Query::new(&bash.into(), BASH_PIPELINE_QUERY)?;
+
         Ok(Self {
             bash_parser: RefCell::new(bash_parser),
             pwsh_parser: RefCell::new(pwsh_parser),
+            bash_redirect_query_span_idx: bash_redirect_query
+                .capture_index_for_name("span")
+                .unwrap(),
+            bash_redirect_query,
+            bash_pipeline_query_span_idx: bash_pipeline_query
+                .capture_index_for_name("span")
+                .unwrap(),
+            bash_pipeline_query,
         })
     }
 
@@ -224,6 +285,7 @@ mod tests {
             ("echo foo >> \\\n $GITHUB_ENV", true),
             // tee cases
             ("something | tee $GITHUB_ENV", true),
+            ("something | tee $GITHUB_ENV | something-else", true),
             ("something | tee \"$GITHUB_ENV\"", true),
             ("something | tee ${GITHUB_ENV}", true),
             ("something | tee \"${GITHUB_ENV}\"", true),
@@ -233,6 +295,8 @@ mod tests {
             // negative cases (comments should not be detected)
             ("echo foo >> $OTHER_ENV # not $GITHUB_ENV", false),
             ("something | tee \"${$OTHER_ENV}\" # not $GITHUB_ENV", false),
+            ("echo foo >> GITHUB_ENV", false), // FP: GITHUB_ENV is not a variable
+            ("echo foo | tee GITHUB_ENV", false), // FP: GITHUB_ENV is not a variable
         ] {
             let audit_state = AuditState {
                 no_online_audits: false,
@@ -243,7 +307,7 @@ mod tests {
             let sut = GitHubEnv::new(audit_state).expect("failed to create audit");
 
             let uses_github_env = sut.uses_github_env(case, "bash").unwrap();
-            assert_eq!(uses_github_env, *expected);
+            assert_eq!(uses_github_env, *expected, "failed: {case}");
         }
     }
 
