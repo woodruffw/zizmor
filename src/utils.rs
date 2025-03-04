@@ -8,6 +8,8 @@ use github_actions_models::common::{
     Env,
 };
 
+use crate::audit::AuditInput;
+
 /// Convenience trait for inline transformations of `Self`.
 ///
 /// This is similar to the `tap` crate's `Pipe` trait, except that
@@ -88,6 +90,32 @@ pub(crate) fn extract_expressions(text: &str) -> Vec<(ExplicitExpr, Range<usize>
 
     exprs
 }
+
+// /// Like `extract_expressions`, but over an entire audit input (e.g. workflow
+// /// or action definition).
+// ///
+// /// Unlike `extract_expressions`, this function performs some semantic
+// /// filtering over the raw input. For example, it skip ignore expressions
+// /// that are inside comments.
+// pub(crate) fn extract_expressions_raw(input: &AuditInput) -> Vec<(ExplicitExpr, Range<usize>)> {
+//     let text = input.document().source();
+//     let doc = input.document();
+
+//     let mut exprs = vec![];
+//     let mut offset = 0;
+
+//     while let Some((expr, span)) = extract_expression(text, offset) {
+//         exprs.push((expr, (span.start..span.end)));
+
+//         if span.end >= text.len() {
+//             break;
+//         } else {
+//             offset = span.end;
+//         }
+//     }
+
+//     exprs
+// }
 
 /// Returns whether the given `env.name` environment access is "static,"
 /// i.e. is not influenced by another expression.
@@ -184,20 +212,33 @@ mod tests {
 
     #[test]
     fn test_parse_expressions() {
-        let expressions = r#"echo "OSSL_PATH=${{ github.workspace }}/osslcache/${{ matrix.PYTHON.OPENSSL.TYPE }}-${{ matrix.PYTHON.OPENSSL.VERSION }}-${OPENSSL_HASH}" >> $GITHUB_ENV"#;
-        let exprs = extract_expressions(expressions)
-            .into_iter()
-            .map(|(e, _)| e.as_curly().to_string())
-            .collect::<Vec<_>>();
+        let multiple = r#"echo "OSSL_PATH=${{ github.workspace }}/osslcache/${{ matrix.PYTHON.OPENSSL.TYPE }}-${{ matrix.PYTHON.OPENSSL.VERSION }}-${OPENSSL_HASH}" >> $GITHUB_ENV"#;
 
-        assert_eq!(
-            exprs,
-            &[
-                "${{ github.workspace }}",
-                "${{ matrix.PYTHON.OPENSSL.TYPE }}",
-                "${{ matrix.PYTHON.OPENSSL.VERSION }}",
-            ]
-        )
+        // See #569 -- we should ignore the broken expression since it's inside a comment.
+        let incomplete = r#"
+name: >-  # ${{ '' } is a hack to nest jobs under the same sidebar category
+  Windows MSI${{ '' }}
+        "#;
+
+        for (raw, expected) in &[
+            (
+                multiple,
+                [
+                    "${{ github.workspace }}",
+                    "${{ matrix.PYTHON.OPENSSL.TYPE }}",
+                    "${{ matrix.PYTHON.OPENSSL.VERSION }}",
+                ]
+                .as_slice(),
+            ),
+            (incomplete, ["${{ '' }"].as_slice()),
+        ] {
+            let exprs = extract_expressions(raw)
+                .into_iter()
+                .map(|(e, _)| e.as_curly().to_string())
+                .collect::<Vec<_>>();
+
+            assert_eq!(exprs, *expected)
+        }
     }
 
     #[test]
