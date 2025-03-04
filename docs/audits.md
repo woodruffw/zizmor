@@ -873,6 +873,81 @@ not using `pull_request_target` for auto-merge workflows.
               GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     ```
 
+## `bypassable-contains-conditions`
+
+| Type     | Examples                                       | Introduced in | Works offline | Enabled by default |
+|----------|------------------------------------------------|---------------|---------------|--------------------|
+| Workflow | [bypassable-contains-conditions.yml]           | v1.5.0        | ✅            | ✅                 |
+
+[bypassable-contains-conditions.yml]: https://github.com/woodruffw/gha-hazmat/blob/main/.github/workflows/bypassable-contains-conditions.yml
+
+Detects conditions that use the `contains()` function in a way that make it possible to bypassing.
+
+Some workflows use `contains()` to check if a context variable is in a list of
+values (e.g., if the the `push` that triggered the job targeted a certain
+branch), and then bypass checks or otherwise perform privileged actions:
+
+```yaml
+if: contains('refs/heads/main refs/heads/develop', github.ref)
+```
+
+However, this condition will not only evaluate to `true` if either
+`refs/heads/main` or `refs/heads/develop` is passed, but also for substrings of
+those values. For example, if someone pushes to a branch named `mai`, then
+`github.ref` would contain the string `refs/heads/mai` and the job would also
+execute.
+
+### Remediation
+
+To check if a value is contained in a list of strings, the first argument to
+`contains()` should be an actual list, not a string. This can be done by using
+the `fromJSON()` function:
+
+```yaml
+if: contains(fromJSON('["refs/heads/main", "refs/heads/develop"]'), github.ref)
+```
+
+Alternative, it's possible to check for equality individually and combine the
+results using the logical "or" operator:
+
+```yaml
+if: github.ref == "refs/heads/main" || github.ref == "refs/heads/develop"
+```
+
+Other resources:
+
+* [GitHub Docs: Evaluate expressions in workflows and actions - Example matching an array of strings]
+
+=== "Before :warning:"
+
+    ```yaml title="bypassable-contains-conditions.yml" hl_lines="9 10"
+    on: push
+
+    jobs:
+      tf-deploy:
+        runs-on: ubuntu-latest
+        steps:
+          - run: terraform init -input=false
+          - run: terraform plan -out=tfplan -input=false
+          - run: terraform apply -input=false tfplan
+            if: contains('refs/heads/main refs/heads/develop', github.ref)
+    ```
+
+=== "After :white_check_mark:"
+
+    ```yaml title="bot-conditions.yml" hl_lines="1 6"
+    on: push
+
+    jobs:
+      tf-deploy:
+        runs-on: ubuntu-latest
+        steps:
+          - run: terraform init -input=false
+          - run: terraform plan -out=tfplan -input=false
+          - run: terraform apply -input=false tfplan
+            if: contains(fromJSON('["refs/heads/main", "refs/heads/develop"]'), github.ref)
+    ```
+
 ## `overprovisioned-secrets`
 
 | Type     | Examples                | Introduced in | Works offline  | Enabled by default |
@@ -1015,6 +1090,7 @@ individual fields as separate secrets.
 [GitHub Actions environment files]: https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/workflow-commands-for-github-actions#environment-files
 [Semgrep audit]: https://semgrep.dev/r?q=yaml.github-actions.security.allowed-unsecure-commands.allowed-unsecure-commands
 [GitHub Actions exploitation: environment manipulation]: https://www.synacktiv.com/en/publications/github-actions-exploitation-repo-jacking-and-environment-manipulation
+[GitHub Docs: Evaluate expressions in workflows and actions - Example matching an array of strings]: https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/evaluate-expressions-in-workflows-and-actions#example-matching-an-array-of-strings
 [GHSL-2024-177: Environment Variable injection in an Actions workflow of Litestar]: https://securitylab.github.com/advisories/GHSL-2024-177_Litestar/
 [Vulnerable GitHub Actions Workflows Part 1: Privilege Escalation Inside Your CI/CD Pipeline]: https://www.legitsecurity.com/blog/github-privilege-escalation-vulnerability
 [Google & Apache Found Vulnerable to GitHub Environment Injection]: https://www.legitsecurity.com/blog/github-privilege-escalation-vulnerability-0

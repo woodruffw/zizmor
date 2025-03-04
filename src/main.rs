@@ -383,6 +383,7 @@ fn run() -> Result<ExitCode> {
     }
 
     register_audit!(audit::artipacked::Artipacked);
+    register_audit!(audit::bypassable_contains_conditions::BypassableContainsConditions);
     register_audit!(audit::excessive_permissions::ExcessivePermissions);
     register_audit!(audit::dangerous_triggers::DangerousTriggers);
     register_audit!(audit::impostor_commit::ImpostorCommit);

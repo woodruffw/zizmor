@@ -368,6 +368,15 @@ fn secrets_inherit() -> Result<()> {
 }
 
 #[test]
+fn bypassable_contains_conditions() -> Result<()> {
+    insta::assert_snapshot!(zizmor()
+        .input(input_under_test("bypassable-contains-conditions.yml"))
+        .run()?);
+
+    Ok(())
+}
+
+#[test]
 fn bot_conditions() -> Result<()> {
     insta::assert_snapshot!(zizmor()
         .input(input_under_test("bot-conditions.yml"))
