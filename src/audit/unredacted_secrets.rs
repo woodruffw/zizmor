@@ -5,7 +5,7 @@ use crate::{
     Confidence, Severity,
 };
 
-use super::{audit_meta, Audit};
+use super::{audit_meta, Audit, AuditState};
 
 pub(crate) struct UnredactedSecrets;
 
@@ -16,7 +16,7 @@ audit_meta!(
 );
 
 impl Audit for UnredactedSecrets {
-    fn new(_: crate::AuditState) -> anyhow::Result<Self>
+    fn new(_state: &AuditState<'_>) -> anyhow::Result<Self>
     where
         Self: Sized,
     {

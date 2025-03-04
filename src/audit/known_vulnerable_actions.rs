@@ -124,7 +124,7 @@ impl KnownVulnerableActions {
 }
 
 impl Audit for KnownVulnerableActions {
-    fn new(state: AuditState) -> anyhow::Result<Self>
+    fn new(state: &AuditState<'_>) -> anyhow::Result<Self>
     where
         Self: Sized,
     {

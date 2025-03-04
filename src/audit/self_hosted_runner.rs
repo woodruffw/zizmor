@@ -28,7 +28,7 @@ audit_meta!(
 );
 
 impl Audit for SelfHostedRunner {
-    fn new(_state: AuditState) -> anyhow::Result<Self>
+    fn new(_state: &AuditState<'_>) -> anyhow::Result<Self>
     where
         Self: Sized,
     {

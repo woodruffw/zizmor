@@ -22,9 +22,7 @@ const KNOWN_PYTHON_TP_INDICES: &[&str] = &[
     "https://test.pypi.org/legacy/",
 ];
 
-pub(crate) struct UseTrustedPublishing {
-    pub(crate) _state: AuditState,
-}
+pub(crate) struct UseTrustedPublishing;
 
 audit_meta!(
     UseTrustedPublishing,
@@ -70,8 +68,8 @@ impl UseTrustedPublishing {
 }
 
 impl Audit for UseTrustedPublishing {
-    fn new(state: AuditState) -> anyhow::Result<Self> {
-        Ok(Self { _state: state })
+    fn new(_state: &AuditState<'_>) -> anyhow::Result<Self> {
+        Ok(Self)
     }
 
     fn audit_step<'w>(&self, step: &super::Step<'w>) -> anyhow::Result<Vec<super::Finding<'w>>> {
