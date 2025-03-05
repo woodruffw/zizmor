@@ -37,16 +37,14 @@ audit_meta!(
     "overly broad permissions"
 );
 
-pub(crate) struct ExcessivePermissions {
-    pub(crate) _config: AuditState,
-}
+pub(crate) struct ExcessivePermissions;
 
 impl Audit for ExcessivePermissions {
-    fn new(config: AuditState) -> anyhow::Result<Self>
+    fn new(_state: &AuditState<'_>) -> anyhow::Result<Self>
     where
         Self: Sized,
     {
-        Ok(Self { _config: config })
+        Ok(Self)
     }
 
     fn audit_workflow<'w>(

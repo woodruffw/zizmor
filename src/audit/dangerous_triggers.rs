@@ -14,7 +14,7 @@ audit_meta!(
 );
 
 impl Audit for DangerousTriggers {
-    fn new(_: AuditState) -> Result<Self> {
+    fn new(_state: &AuditState<'_>) -> anyhow::Result<Self> {
         Ok(Self)
     }
 

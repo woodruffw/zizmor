@@ -113,7 +113,7 @@ impl ImpostorCommit {
 }
 
 impl Audit for ImpostorCommit {
-    fn new(state: AuditState) -> Result<Self> {
+    fn new(state: &AuditState<'_>) -> anyhow::Result<Self> {
         if state.no_online_audits {
             return Err(anyhow!("offline audits only requested"));
         }
