@@ -59,10 +59,10 @@ tokio = { version = "1.43.0", features = ["rt-multi-thread"] }
 tracing = "0.1.41"
 tracing-indicatif = "0.3.9"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-tree-sitter = "0.24.7"
+tree-sitter = "0.25.2"
 tree-sitter-bash = "0.23.3"
 tree-sitter-powershell = "0.24.4"
-yamlpath = "0.14.0"
+yamlpath = "0.15.0"
 
 [profile.dev.package]
 insta.opt-level = 3
