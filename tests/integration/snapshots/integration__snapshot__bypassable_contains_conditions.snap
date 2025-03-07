@@ -1,0 +1,46 @@
+---
+source: tests/integration/snapshot.rs
+expression: "zizmor().input(input_under_test(\"bypassable-contains-conditions.yml\")).run()?"
+snapshot_kind: text
+---
+error[bypassable-contains-conditions]: bypassable contains conditions checks
+  --> @@INPUT@@:17:9
+   |
+17 |         if: ${{ contains('refs/heads/main refs/heads/develop', github.ref) }}
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ contains(..) condition can be bypassed if attacker can control 'github.ref'
+   |
+   = note: audit confidence → High
+
+error[bypassable-contains-conditions]: bypassable contains conditions checks
+  --> @@INPUT@@:21:9
+   |
+21 |         if: ${{ contains('main,develop', env.GITHUB_REF_NAME) }}
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ contains(..) condition can be bypassed if attacker can control 'env.GITHUB_REF_NAME'
+   |
+   = note: audit confidence → High
+
+error[bypassable-contains-conditions]: bypassable contains conditions checks
+  --> @@INPUT@@:25:9
+   |
+25 |         if: contains('main,prod', github.ref_name) || contains('longusername anotherlongusername', github.actor) == true
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ contains(..) condition can be bypassed if attacker can control 'github.ref_name'
+   |
+   = note: audit confidence → High
+
+error[bypassable-contains-conditions]: bypassable contains conditions checks
+  --> @@INPUT@@:25:9
+   |
+25 |         if: contains('main,prod', github.ref_name) || contains('longusername anotherlongusername', github.actor) == true
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ contains(..) condition can be bypassed if attacker can control 'github.actor'
+   |
+   = note: audit confidence → High
+
+error[bypassable-contains-conditions]: bypassable contains conditions checks
+  --> @@INPUT@@:29:9
+   |
+29 |         if: contains('runner1,runner2', runner.name)
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ contains(..) condition can be bypassed if attacker can control 'runner.name'
+   |
+   = note: audit confidence → Medium
+
+5 findings: 0 unknown, 0 informational, 0 low, 0 medium, 5 high
