@@ -490,6 +490,36 @@ This will run `zizmor` on every commit.
     See [`pre-commit`](https://pre-commit.com/) documentation for more
     information on how to configure `pre-commit`.
 
+### Color customization
+
+When invoked from a terminal, `zizmor` will attempt to enrich its output
+with ANSI colors.
+
+!!! note
+
+    `--color` is available in `v1.5.0` and later.
+
+Some users may prefer to explicitly enable or disable this behavior. For
+example, GitHub Actions is not a terminal but it does support ANSI colors,
+so enabling colors in GitHub Actions can make logs more readable.
+
+To explicitly control `zizmor`'s colorization behavior, use the
+`--color` option:
+
+```bash
+# force colorization
+zizmor --color=always ...
+
+# force no colorization
+zizmor --color=never ...
+```
+
+`zizmor` also respects various environment variables for colorization:
+
+* [`NO_COLOR`](https://no-color.org/): if set to any value, disables colorization
+* [`FORCE_COLOR`](https://force-color.org/): if set to any value, enables colorization
+* [`CLICOLOR_FORCE`](https://bixense.com/clicolors/): if set to any value, enables colorization
+
 ## Limitations
 
 `zizmor` can help you write more secure GitHub workflow and action definitions,

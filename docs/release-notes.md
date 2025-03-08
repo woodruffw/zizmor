@@ -20,6 +20,8 @@ of `zizmor`.
   (#575)
 * `zizmor` now has a `--no-progress` flag that disables
   progress bars, even if the terminal supports them (#589)
+* `zizmor` now has a `--color` flag that controls when `zizmor`'s
+  output is colorized (beyond basic terminal detection) (#586)
 
 ### Bug Fixes 🐛
 

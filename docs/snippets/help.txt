@@ -26,6 +26,8 @@ Options:
           Don't show progress bars, even if the terminal supports them
       --format <FORMAT>
           The output format to emit. By default, plain text will be emitted [default: plain] [possible values: plain, json, sarif]
+      --color <MODE>
+          Control the use of color in output [possible values: auto, always, never]
   -c, --config <CONFIG>
           The configuration file to load. By default, any config will be discovered relative to $CWD
       --no-config
