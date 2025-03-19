@@ -265,7 +265,7 @@ impl TemplateInjection {
 }
 
 impl Audit for TemplateInjection {
-    fn new(_state: AuditState) -> anyhow::Result<Self>
+    fn new(_state: &AuditState<'_>) -> anyhow::Result<Self>
     where
         Self: Sized,
     {

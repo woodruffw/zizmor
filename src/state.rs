@@ -6,19 +6,21 @@ use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 
 use crate::{
     App,
+    config::Config,
     github_api::{Client, GitHubHost},
 };
 
 #[derive(Clone)]
-pub(crate) struct AuditState {
+pub(crate) struct AuditState<'a> {
+    pub(crate) config: &'a Config,
     pub(crate) no_online_audits: bool,
     pub(crate) cache_dir: PathBuf,
     pub(crate) gh_token: Option<String>,
     pub(crate) gh_hostname: GitHubHost,
 }
 
-impl AuditState {
-    pub(crate) fn new(app: &App) -> Self {
+impl<'a> AuditState<'a> {
+    pub(crate) fn new(app: &App, config: &'a Config) -> Self {
         let cache_dir = match &app.cache_dir {
             Some(cache_dir) => cache_dir.as_std_path().to_path_buf(),
             None => choose_app_strategy(AppStrategyArgs {
@@ -34,6 +36,7 @@ impl AuditState {
         tracing::debug!("using cache directory: {cache_dir:?}");
 
         Self {
+            config,
             no_online_audits: app.no_online_audits,
             cache_dir,
             gh_token: app.gh_token.clone(),

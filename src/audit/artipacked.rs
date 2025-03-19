@@ -46,7 +46,7 @@ impl Artipacked {
 }
 
 impl Audit for Artipacked {
-    fn new(_state: AuditState) -> Result<Self> {
+    fn new(_state: &AuditState<'_>) -> anyhow::Result<Self> {
         Ok(Self)
     }
 

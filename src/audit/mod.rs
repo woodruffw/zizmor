@@ -18,6 +18,7 @@ pub(crate) mod bot_conditions;
 pub(crate) mod cache_poisoning;
 pub(crate) mod dangerous_triggers;
 pub(crate) mod excessive_permissions;
+pub(crate) mod forbidden_uses;
 pub(crate) mod github_env;
 pub(crate) mod hardcoded_container_credentials;
 pub(crate) mod impostor_commit;
@@ -180,7 +181,7 @@ pub(crate) use audit_meta;
 /// **only** [`Audit::audit`] and not [`Audit::audit_normal_job`] or
 /// [`Audit::audit_step`].
 pub(crate) trait Audit: AuditCore {
-    fn new(state: AuditState) -> Result<Self>
+    fn new(state: &AuditState<'_>) -> Result<Self>
     where
         Self: Sized;
 
