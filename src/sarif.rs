@@ -2,9 +2,10 @@
 
 use std::collections::HashSet;
 
+use camino::Utf8Path;
 use serde_sarif::sarif::{
-    ArtifactContent, ArtifactLocation, Location as SarifLocation, LogicalLocation, Message,
-    MultiformatMessageString, PhysicalLocation, PropertyBag, Region, ReportingDescriptor,
+    ArtifactContent, ArtifactLocation, Invocation, Location as SarifLocation, LogicalLocation,
+    Message, MultiformatMessageString, PhysicalLocation, PropertyBag, Region, ReportingDescriptor,
     Result as SarifResult, ResultKind, ResultLevel, Run, Sarif, Tool, ToolComponent,
 };
 
@@ -36,15 +37,15 @@ impl From<Severity> for ResultLevel {
     }
 }
 
-pub(crate) fn build(findings: &[Finding]) -> Sarif {
+pub(crate) fn build(findings: &[Finding], cwd: &Utf8Path) -> Sarif {
     Sarif::builder()
         .version("2.1.0")
         .schema("https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json")
-        .runs([build_run(findings)])
+        .runs([build_run(findings, cwd)])
         .build()
 }
 
-fn build_run(findings: &[Finding]) -> Run {
+fn build_run(findings: &[Finding], cwd: &Utf8Path) -> Run {
     Run::builder()
         .tool(
             Tool::builder()
@@ -61,6 +62,20 @@ fn build_run(findings: &[Finding]) -> Run {
                 .build(),
         )
         .results(build_results(findings))
+        .invocations([Invocation::builder()
+            // We only produce results on successful executions.
+            .execution_successful(true)
+            // HACK(ww): GitHub's SARIF feature doesn't handle relative paths
+            // that are prefixed with `./` correctly. To work around this,
+            // we include the `$CWD` as `invocations[0].working_directory.uri`,
+            // which should make GitHub's viewer process relative paths
+            // as if they were absolute.
+            .working_directory(
+                ArtifactLocation::builder()
+                    .uri(format!("file://{cwd}"))
+                    .build(),
+            )
+            .build()])
         .build()
 }
 

@@ -536,7 +536,14 @@ fn run() -> Result<ExitCode> {
         OutputFormat::Plain => render::render_findings(&app, &registry, &results),
         OutputFormat::Json => serde_json::to_writer_pretty(stdout(), &results.findings())?,
         OutputFormat::Sarif => {
-            serde_json::to_writer_pretty(stdout(), &sarif::build(results.findings()))?
+            // HACK(ww): GitHub's SARIF feature claims to support relative paths
+            // in results, but can't handle paths like `./foo/bar`.
+            // See further comments in sarif.rs for how we work around this
+            // using the passed-in $CWD.
+            let cwd = Utf8PathBuf::try_from(
+                std::env::current_dir().with_context(|| "couldn't access CWD")?,
+            )?;
+            serde_json::to_writer_pretty(stdout(), &sarif::build(results.findings(), &cwd))?
         }
     };
 
