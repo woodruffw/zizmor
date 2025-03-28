@@ -6,6 +6,8 @@ Arguments:
   <INPUTS>...  The inputs to audit
 
 Options:
+      --lsp
+          Run in language server mode
   -p, --pedantic
           Emit 'pedantic' findings
       --persona <PERSONA>

@@ -30,6 +30,8 @@ mod config;
 mod expr;
 mod finding;
 mod github_api;
+#[cfg(feature = "lsp")]
+mod lsp;
 mod models;
 mod registry;
 mod render;
@@ -41,6 +43,13 @@ mod utils;
 #[derive(Parser)]
 #[command(about, version)]
 struct App {
+    /// Run in language server mode.
+    ///
+    /// This flag cannot be used with any other flags.
+    #[cfg(feature = "lsp")]
+    #[arg(long, exclusive = true)]
+    lsp: bool,
+
     /// Emit 'pedantic' findings.
     ///
     /// This is an alias for --persona=pedantic.
@@ -397,6 +406,12 @@ fn run() -> Result<ExitCode> {
     human_panic::setup_panic!();
 
     let mut app = App::parse();
+
+    #[cfg(feature = "lsp")]
+    if app.lsp {
+        lsp::run();
+        return Ok(ExitCode::SUCCESS);
+    }
 
     let color_mode = match app.color {
         Some(color_mode) => color_mode,
