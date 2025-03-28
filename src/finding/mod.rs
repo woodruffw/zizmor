@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow};
 use clap::ValueEnum;
 use line_index::{LineCol, TextSize};
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use terminal_link::Link;
 
 use crate::{
@@ -19,7 +19,18 @@ use crate::{
 /// finding. This is used to model the sensitivity of different use-cases
 /// to false positives.
 #[derive(
-    Copy, Clone, Debug, Default, Eq, Hash, Ord, PartialOrd, PartialEq, Serialize, ValueEnum,
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    ValueEnum,
 )]
 pub(crate) enum Persona {
     /// The "auditor" persona (false positives OK).
@@ -43,7 +54,18 @@ pub(crate) enum Persona {
 }
 
 #[derive(
-    Copy, Clone, Debug, Default, Eq, Hash, Ord, PartialOrd, PartialEq, Serialize, ValueEnum,
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    ValueEnum,
 )]
 pub(crate) enum Confidence {
     #[default]
@@ -54,7 +76,18 @@ pub(crate) enum Confidence {
 }
 
 #[derive(
-    Copy, Clone, Debug, Default, Eq, Hash, Ord, PartialOrd, PartialEq, Serialize, ValueEnum,
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    ValueEnum,
 )]
 pub(crate) enum Severity {
     #[default]

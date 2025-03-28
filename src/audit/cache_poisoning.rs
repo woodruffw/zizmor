@@ -304,7 +304,7 @@ impl CachePoisoning {
 }
 
 impl Audit for CachePoisoning {
-    fn new(_: AuditState) -> anyhow::Result<Self>
+    fn new(_state: &AuditState<'_>) -> anyhow::Result<Self>
     where
         Self: Sized,
     {
