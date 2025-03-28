@@ -1,4 +1,4 @@
-//! APIs for rendering zizmor's "plain" (i.e. terminal) output format.
+//! "plain" (i.e. cargo-style) output.
 
 use std::collections::{HashMap, hash_map::Entry};
 

@@ -1,0 +1,16 @@
+name: several vulnerabilities
+on:
+  pull_request_target:
+
+permissions: write-all
+
+jobs:
+  hackme:
+    name: hackme
+    runs-on: ubuntu-latest
+    permissions: write-all
+
+    steps:
+      - name: hackme
+        run: |
+          echo "${{ github.event.pull_request.title }}"

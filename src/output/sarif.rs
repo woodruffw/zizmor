@@ -1,4 +1,4 @@
-//! APIs for rendering SARIF outputs.
+//! SARIF output.
 
 use std::collections::HashSet;
 

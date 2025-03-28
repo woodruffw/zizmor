@@ -31,9 +31,8 @@ mod expr;
 mod finding;
 mod github_api;
 mod models;
+mod output;
 mod registry;
-mod render;
-mod sarif;
 mod state;
 mod utils;
 
@@ -81,7 +80,7 @@ struct App {
     #[arg(long)]
     no_progress: bool,
 
-    /// The output format to emit. By default, plain text will be emitted
+    /// The output format to emit. By default, cargo-style diagnostics will be emitted.
     #[arg(long, value_enum, default_value_t)]
     format: OutputFormat,
 
@@ -137,10 +136,15 @@ struct App {
 
 #[derive(Debug, Default, Copy, Clone, ValueEnum)]
 pub(crate) enum OutputFormat {
+    /// cargo-style output.
     #[default]
     Plain,
+    /// JSON-formatted output.
     Json,
+    /// SARIF-formatted output.
     Sarif,
+    /// GitHub Actions workflow command-formatted output.
+    Github,
 }
 
 #[derive(Debug, Copy, Clone, ValueEnum)]
@@ -533,11 +537,12 @@ fn run() -> Result<ExitCode> {
     }
 
     match app.format {
-        OutputFormat::Plain => render::render_findings(&app, &registry, &results),
+        OutputFormat::Plain => output::plain::render_findings(&app, &registry, &results),
         OutputFormat::Json => serde_json::to_writer_pretty(stdout(), &results.findings())?,
         OutputFormat::Sarif => {
-            serde_json::to_writer_pretty(stdout(), &sarif::build(results.findings()))?
+            serde_json::to_writer_pretty(stdout(), &output::sarif::build(results.findings()))?
         }
+        OutputFormat::Github => output::github::output(stdout(), results.findings())?,
     };
 
     if app.no_exit_codes || matches!(app.format, OutputFormat::Sarif) {

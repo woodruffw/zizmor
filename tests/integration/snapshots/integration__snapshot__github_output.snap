@@ -1,0 +1,8 @@
+---
+source: tests/integration/snapshot.rs
+expression: "zizmor().offline(true).input(input_under_test(\"several-vulnerabilities.yml\")).args([\"--persona=auditor\",\n\"--format=github\"]).run()?"
+---
+::error file=@@INPUT@@,line=5,endLine=5,title=excessive-permissions::overly broad permissions
+::error file=@@INPUT@@,line=11,endLine=11,title=excessive-permissions::overly broad permissions
+::error file=@@INPUT@@,line=2,endLine=3,title=dangerous-triggers::use of fundamentally insecure workflow trigger
+::error file=@@INPUT@@,line=15,endLine=17,title=template-injection::code injection via template expansion
