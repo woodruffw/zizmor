@@ -43,7 +43,7 @@ impl RepositoryUsesExt for RepositoryUses {
 
     fn matches_uses(&self, template: &RepositoryUses) -> bool {
         self.owner.eq_ignore_ascii_case(&template.owner)
-            && self.repo.eq_ignore_ascii_case(&template.repo)
+            && (template.repo == "*" || self.repo.eq_ignore_ascii_case(&template.repo))
             && self.subpath.as_ref().map(|s| s.to_lowercase())
                 == template.subpath.as_ref().map(|s| s.to_lowercase())
             && template.git_ref.as_ref().is_none_or(|git_ref| {

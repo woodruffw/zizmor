@@ -467,19 +467,17 @@ fn run() -> Result<ExitCode> {
         reg.with(indicatif_layer).init();
     }
 
-    let audit_state = AuditState::new(&app);
-    let registry = collect_inputs(&app.inputs, &app.collect, &audit_state)?;
-
     let config = Config::new(&app)?;
+    let audit_state = AuditState::new(&app, &config);
+    let registry = collect_inputs(&app.inputs, &app.collect, &audit_state)?;
 
     let mut audit_registry = AuditRegistry::new();
     macro_rules! register_audit {
         ($rule:path) => {{
             // HACK: https://github.com/rust-lang/rust/issues/48067
-            use $rule as base;
-
             use crate::audit::AuditCore as _;
-            match base::new(audit_state.clone()) {
+            use $rule as base;
+            match base::new(&audit_state) {
                 Ok(audit) => audit_registry.register_audit(base::ident(), Box::new(audit)),
                 Err(e) => tracing::info!("skipping {audit}: {e}", audit = base::ident()),
             }
@@ -504,6 +502,7 @@ fn run() -> Result<ExitCode> {
     register_audit!(audit::bot_conditions::BotConditions);
     register_audit!(audit::overprovisioned_secrets::OverprovisionedSecrets);
     register_audit!(audit::unredacted_secrets::UnredactedSecrets);
+    register_audit!(audit::forbidden_uses::ForbiddenUses);
 
     let mut results = FindingRegistry::new(&app, &config);
     {

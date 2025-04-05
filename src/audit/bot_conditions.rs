@@ -1,6 +1,6 @@
 use github_actions_models::common::{If, expr::ExplicitExpr};
 
-use super::{Audit, audit_meta};
+use super::{Audit, AuditState, audit_meta};
 use crate::{
     expr::{self, Context, Expr},
     finding::{Confidence, Severity},
@@ -14,7 +14,7 @@ audit_meta!(BotConditions, "bot-conditions", "spoofable bot actor check");
 const SPOOFABLE_ACTOR_CONTEXTS: &[&str] = &["github.actor", "github.triggering_actor"];
 
 impl Audit for BotConditions {
-    fn new(_state: super::AuditState) -> anyhow::Result<Self>
+    fn new(_state: &AuditState<'_>) -> anyhow::Result<Self>
     where
         Self: Sized,
     {

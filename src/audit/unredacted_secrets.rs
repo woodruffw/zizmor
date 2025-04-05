@@ -5,7 +5,7 @@ use crate::{
     utils::parse_expressions_from_input,
 };
 
-use super::{Audit, audit_meta};
+use super::{Audit, AuditState, audit_meta};
 
 pub(crate) struct UnredactedSecrets;
 
@@ -16,7 +16,7 @@ audit_meta!(
 );
 
 impl Audit for UnredactedSecrets {
-    fn new(_: crate::AuditState) -> anyhow::Result<Self>
+    fn new(_state: &AuditState<'_>) -> anyhow::Result<Self>
     where
         Self: Sized,
     {
