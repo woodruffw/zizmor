@@ -1,12 +1,12 @@
 use std::{
-    io::{Write, stdout},
+    io::{stdout, Write},
     process::ExitCode,
     str::FromStr,
 };
 
 use annotate_snippets::{Level, Renderer};
 use anstream::{eprintln, stream::IsTerminal};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use audit::Audit;
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::{Parser, ValueEnum};
@@ -21,9 +21,9 @@ use models::Action;
 use owo_colors::OwoColorize;
 use registry::{AuditRegistry, FindingRegistry, InputRegistry};
 use state::AuditState;
-use tracing::{Span, info_span, instrument};
-use tracing_indicatif::{IndicatifLayer, span_ext::IndicatifSpanExt};
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt as _, util::SubscriberInitExt as _};
+use tracing::{info_span, instrument, Span};
+use tracing_indicatif::{span_ext::IndicatifSpanExt, IndicatifLayer};
+use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 
 mod audit;
 mod config;
@@ -501,6 +501,7 @@ fn run() -> Result<ExitCode> {
     register_audit!(audit::github_env::GitHubEnv);
     register_audit!(audit::cache_poisoning::CachePoisoning);
     register_audit!(audit::secrets_inherit::SecretsInherit);
+    register_audit!(audit::secrets_outside_environment::SecretsOutsideEnvironment);
     register_audit!(audit::bot_conditions::BotConditions);
     register_audit!(audit::overprovisioned_secrets::OverprovisionedSecrets);
     register_audit!(audit::unredacted_secrets::UnredactedSecrets);
