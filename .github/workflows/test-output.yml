@@ -1,4 +1,4 @@
-name: Test SARIF Presentation
+name: Test output formats
 
 on:
   pull_request:
@@ -46,3 +46,22 @@ jobs:
               repo: context.repo.repo,
               body: `:robot: Presentation results: <${url}>`
             })
+
+  test-github-presentation:
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.labels.*.name, 'test-github-presentation')
+    permissions: {}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
+
+      - name: Run zizmor
+        run: |
+          # Normally we'd want a workflow to fail if the audit fails,
+          # but we're only testing presentation here.
+          cargo run -- --no-exit-codes --format github .
