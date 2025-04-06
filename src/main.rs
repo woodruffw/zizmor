@@ -7,7 +7,6 @@ use std::{
 use annotate_snippets::{Level, Renderer};
 use anstream::{eprintln, stream::IsTerminal};
 use anyhow::{Context, Result, anyhow};
-use audit::Audit;
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::{Parser, ValueEnum};
 use clap_verbosity_flag::InfoLevel;
@@ -30,6 +29,8 @@ mod config;
 mod expr;
 mod finding;
 mod github_api;
+#[cfg(feature = "lsp")]
+mod lsp;
 mod models;
 mod registry;
 mod render;
@@ -41,6 +42,13 @@ mod utils;
 #[derive(Parser)]
 #[command(about, version)]
 struct App {
+    /// Run in language server mode.
+    ///
+    /// This flag cannot be used with any other flags.
+    #[cfg(feature = "lsp")]
+    #[arg(long, exclusive = true)]
+    lsp: bool,
+
     /// Emit 'pedantic' findings.
     ///
     /// This is an alias for --persona=pedantic.
@@ -398,6 +406,12 @@ fn run() -> Result<ExitCode> {
 
     let mut app = App::parse();
 
+    #[cfg(feature = "lsp")]
+    if app.lsp {
+        lsp::run();
+        return Ok(ExitCode::SUCCESS);
+    }
+
     let color_mode = match app.color {
         Some(color_mode) => color_mode,
         None => {
@@ -472,38 +486,7 @@ fn run() -> Result<ExitCode> {
 
     let config = Config::new(&app)?;
 
-    let mut audit_registry = AuditRegistry::new();
-    macro_rules! register_audit {
-        ($rule:path) => {{
-            // HACK: https://github.com/rust-lang/rust/issues/48067
-            use $rule as base;
-
-            use crate::audit::AuditCore as _;
-            match base::new(audit_state.clone()) {
-                Ok(audit) => audit_registry.register_audit(base::ident(), Box::new(audit)),
-                Err(e) => tracing::info!("skipping {audit}: {e}", audit = base::ident()),
-            }
-        }};
-    }
-
-    register_audit!(audit::artipacked::Artipacked);
-    register_audit!(audit::excessive_permissions::ExcessivePermissions);
-    register_audit!(audit::dangerous_triggers::DangerousTriggers);
-    register_audit!(audit::impostor_commit::ImpostorCommit);
-    register_audit!(audit::ref_confusion::RefConfusion);
-    register_audit!(audit::use_trusted_publishing::UseTrustedPublishing);
-    register_audit!(audit::template_injection::TemplateInjection);
-    register_audit!(audit::hardcoded_container_credentials::HardcodedContainerCredentials);
-    register_audit!(audit::self_hosted_runner::SelfHostedRunner);
-    register_audit!(audit::known_vulnerable_actions::KnownVulnerableActions);
-    register_audit!(audit::unpinned_uses::UnpinnedUses);
-    register_audit!(audit::insecure_commands::InsecureCommands);
-    register_audit!(audit::github_env::GitHubEnv);
-    register_audit!(audit::cache_poisoning::CachePoisoning);
-    register_audit!(audit::secrets_inherit::SecretsInherit);
-    register_audit!(audit::bot_conditions::BotConditions);
-    register_audit!(audit::overprovisioned_secrets::OverprovisionedSecrets);
-    register_audit!(audit::unredacted_secrets::UnredactedSecrets);
+    let audit_registry = AuditRegistry::default_audits(&audit_state);
 
     let mut results = FindingRegistry::new(&app, &config);
     {

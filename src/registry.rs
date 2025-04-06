@@ -15,8 +15,8 @@ use serde::Serialize;
 use tracing::instrument;
 
 use crate::{
-    App,
-    audit::{Audit, AuditInput},
+    App, AuditState,
+    audit::{self, Audit, AuditInput},
     config::Config,
     finding::{Confidence, Finding, Persona, Severity},
     models::{Action, Workflow},
@@ -206,26 +206,78 @@ impl InputRegistry {
 }
 
 pub(crate) struct AuditRegistry {
-    pub(crate) workflow_audits: IndexMap<&'static str, Box<dyn Audit>>,
+    pub(crate) workflow_audits: IndexMap<&'static str, Box<dyn Audit + Send + Sync>>,
 }
 
 impl AuditRegistry {
-    pub(crate) fn new() -> Self {
+    fn empty() -> Self {
         Self {
             workflow_audits: Default::default(),
         }
+    }
+
+    pub(crate) fn default_audits(audit_state: &AuditState) -> Self {
+        let mut registry = Self::empty();
+
+        macro_rules! register_audit {
+            ($rule:path) => {{
+                // HACK: https://github.com/rust-lang/rust/issues/48067
+                use $rule as base;
+
+                use crate::audit::AuditCore as _;
+                match base::new(audit_state.clone()) {
+                    Ok(audit) => registry.register_audit(base::ident(), Box::new(audit)),
+                    Err(e) => tracing::info!(
+                        target: "zizmor", "skipping {audit}: {e}", audit = base::ident()
+                    ),
+                }
+            }};
+        }
+
+        register_audit!(audit::artipacked::Artipacked);
+        register_audit!(audit::excessive_permissions::ExcessivePermissions);
+        register_audit!(audit::dangerous_triggers::DangerousTriggers);
+        register_audit!(audit::impostor_commit::ImpostorCommit);
+        register_audit!(audit::ref_confusion::RefConfusion);
+        register_audit!(audit::use_trusted_publishing::UseTrustedPublishing);
+        register_audit!(audit::template_injection::TemplateInjection);
+        register_audit!(audit::hardcoded_container_credentials::HardcodedContainerCredentials);
+        register_audit!(audit::self_hosted_runner::SelfHostedRunner);
+        register_audit!(audit::known_vulnerable_actions::KnownVulnerableActions);
+        register_audit!(audit::unpinned_uses::UnpinnedUses);
+        register_audit!(audit::insecure_commands::InsecureCommands);
+        register_audit!(audit::github_env::GitHubEnv);
+        register_audit!(audit::cache_poisoning::CachePoisoning);
+        register_audit!(audit::secrets_inherit::SecretsInherit);
+        register_audit!(audit::bot_conditions::BotConditions);
+        register_audit!(audit::overprovisioned_secrets::OverprovisionedSecrets);
+        register_audit!(audit::unredacted_secrets::UnredactedSecrets);
+
+        registry
     }
 
     pub(crate) fn len(&self) -> usize {
         self.workflow_audits.len()
     }
 
-    pub(crate) fn register_audit(&mut self, ident: &'static str, audit: Box<dyn Audit>) {
+    pub(crate) fn register_audit(
+        &mut self,
+        ident: &'static str,
+        audit: Box<dyn Audit + Send + Sync>,
+    ) {
         self.workflow_audits.insert(ident, audit);
     }
 
-    pub(crate) fn iter_audits(&self) -> indexmap::map::Iter<&str, Box<dyn Audit>> {
+    pub(crate) fn iter_audits(&self) -> indexmap::map::Iter<&str, Box<dyn Audit + Send + Sync>> {
         self.workflow_audits.iter()
+    }
+}
+
+impl std::fmt::Debug for AuditRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuditRegistry")
+            .field("workflow_audits", &self.workflow_audits.len())
+            .finish()
     }
 }
 
