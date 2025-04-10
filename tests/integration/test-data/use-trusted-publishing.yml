@@ -6,6 +6,7 @@ on: [push]
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: "secret environment"
     permissions:
       id-token: write
     steps:
