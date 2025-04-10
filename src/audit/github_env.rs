@@ -340,7 +340,7 @@ impl GitHubEnv {
 }
 
 impl Audit for GitHubEnv {
-    fn new(_: AuditState) -> anyhow::Result<Self>
+    fn new(_state: &AuditState<'_>) -> anyhow::Result<Self>
     where
         Self: Sized,
     {
@@ -506,13 +506,14 @@ mod tests {
             ("echo \"completely-static\" >> $GITHUB_ENV", false), // LHS is completely static
         ] {
             let audit_state = AuditState {
+                config: &Default::default(),
                 no_online_audits: false,
                 cache_dir: "/tmp/zizmor".into(),
                 gh_token: None,
                 gh_hostname: GitHubHost::Standard("github.com".into()),
             };
 
-            let sut = GitHubEnv::new(audit_state).expect("failed to create audit");
+            let sut = GitHubEnv::new(&audit_state).expect("failed to create audit");
 
             let uses_github_env = sut.uses_github_env(case, "bash").unwrap();
 
@@ -622,13 +623,14 @@ mod tests {
             ), // GITHUB_ENV is not a variable
         ] {
             let audit_state = AuditState {
+                config: &Default::default(),
                 no_online_audits: false,
                 cache_dir: "/tmp/zizmor".into(),
                 gh_token: None,
                 gh_hostname: GitHubHost::Standard("github.com".into()),
             };
 
-            let sut = GitHubEnv::new(audit_state).expect("failed to create audit");
+            let sut = GitHubEnv::new(&audit_state).expect("failed to create audit");
 
             let uses_github_env = sut.uses_github_env(case, "pwsh").unwrap();
 

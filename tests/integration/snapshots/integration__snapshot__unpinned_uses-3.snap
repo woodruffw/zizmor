@@ -1,6 +1,6 @@
 ---
 source: tests/integration/snapshot.rs
-expression: "zizmor().input(workflow_under_test(\"unpinned-uses/action.yml\")).args([\"--pedantic\"]).run()?"
+expression: "zizmor().input(input_under_test(\"unpinned-uses/action.yml\")).args([\"--pedantic\"]).run()?"
 snapshot_kind: text
 ---
 help[unpinned-uses]: unpinned action reference
@@ -19,4 +19,4 @@ help[unpinned-uses]: unpinned action reference
    |
    = note: audit confidence → High
 
-2 findings: 0 unknown, 0 informational, 2 low, 0 medium, 0 high
+4 findings (2 suppressed): 0 unknown, 0 informational, 2 low, 0 medium, 0 high

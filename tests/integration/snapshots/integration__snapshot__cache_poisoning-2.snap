@@ -1,6 +1,6 @@
 ---
 source: tests/integration/snapshot.rs
-expression: "zizmor().input(workflow_under_test(\"cache-poisoning/caching-enabled-by-default.yml\")).run()?"
+expression: "zizmor().input(input_under_test(\"cache-poisoning/caching-enabled-by-default.yml\")).run()?"
 snapshot_kind: text
 ---
 error[cache-poisoning]: runtime artifacts potentially vulnerable to a cache poisoning attack
@@ -16,4 +16,4 @@ error[cache-poisoning]: runtime artifacts potentially vulnerable to a cache pois
    |
    = note: audit confidence → Low
 
-1 finding: 0 unknown, 0 informational, 0 low, 0 medium, 1 high
+2 findings (1 suppressed): 0 unknown, 0 informational, 0 low, 0 medium, 1 high

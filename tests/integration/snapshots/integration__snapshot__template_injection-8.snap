@@ -1,6 +1,6 @@
 ---
 source: tests/integration/snapshot.rs
-expression: "zizmor().input(workflow_under_test(\"template-injection/pr-425-backstop/action.yml\")).run()?"
+expression: "zizmor().input(input_under_test(\"template-injection/pr-425-backstop/action.yml\")).run()?"
 snapshot_kind: text
 ---
 error[template-injection]: code injection via template expansion
@@ -59,4 +59,4 @@ warning[unpinned-uses]: unpinned action reference
    |
    = note: audit confidence → High
 
-5 findings: 0 unknown, 0 informational, 0 low, 1 medium, 4 high
+7 findings (2 suppressed): 0 unknown, 0 informational, 0 low, 1 medium, 4 high

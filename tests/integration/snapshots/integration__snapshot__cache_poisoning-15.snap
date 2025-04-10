@@ -17,4 +17,4 @@ error[cache-poisoning]: runtime artifacts potentially vulnerable to a cache pois
    |
    = note: audit confidence → Low
 
-1 finding: 0 unknown, 0 informational, 0 low, 0 medium, 1 high
+5 findings (4 suppressed): 0 unknown, 0 informational, 0 low, 0 medium, 1 high

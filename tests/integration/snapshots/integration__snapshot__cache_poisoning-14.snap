@@ -1,6 +1,6 @@
 ---
 source: tests/integration/snapshot.rs
-expression: "zizmor().input(workflow_under_test(\"cache-poisoning/issue-378-repro.yml\")).run()?"
+expression: "zizmor().input(input_under_test(\"cache-poisoning/issue-378-repro.yml\")).run()?"
 snapshot_kind: text
 ---
-No findings to report. Good job!
+No findings to report. Good job! (2 suppressed)

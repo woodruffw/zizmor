@@ -4,7 +4,7 @@ use crate::{
     utils::parse_expressions_from_input,
 };
 
-use super::{Audit, AuditInput, audit_meta};
+use super::{Audit, AuditInput, AuditState, audit_meta};
 
 pub(crate) struct OverprovisionedSecrets;
 
@@ -15,7 +15,7 @@ audit_meta!(
 );
 
 impl Audit for OverprovisionedSecrets {
-    fn new(_state: super::AuditState) -> anyhow::Result<Self>
+    fn new(_state: &AuditState) -> anyhow::Result<Self>
     where
         Self: Sized,
     {
