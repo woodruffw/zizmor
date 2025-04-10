@@ -1,0 +1,29 @@
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      some_value:
+        required: true
+
+permissions: {}
+
+jobs:
+  hackme:
+    runs-on: ubuntu-latest
+    steps:
+      - name: vulnerable-1
+        run: echo hello
+        if: ${{ contains('refs/heads/main refs/heads/develop', github.ref) }}
+
+      - name: vulnerable-2
+        run: echo hello
+        if: ${{ contains('main,develop', env.GITHUB_REF_NAME) }}
+
+      - name: vulnerable-3
+        run: echo hello
+        if: contains('main,prod', github.ref_name) || contains('longusername anotherlongusername', github.actor) == true
+
+      - name: probably-not-vulnerable-but-still-bad
+        run: echo hello
+        if: contains('runner1,runner2', runner.name)

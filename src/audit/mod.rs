@@ -15,6 +15,7 @@ use crate::{
 
 pub(crate) mod artipacked;
 pub(crate) mod bot_conditions;
+pub(crate) mod bypassable_contains_conditions;
 pub(crate) mod cache_poisoning;
 pub(crate) mod dangerous_triggers;
 pub(crate) mod excessive_permissions;
