@@ -20,7 +20,7 @@ use terminal_link::Link;
 
 use crate::finding::{Route, SymbolicLocation};
 use crate::registry::InputKey;
-use crate::utils::{self, extract_expressions};
+use crate::utils::{self, extract_expressions, validate_workflow};
 
 pub(crate) mod coordinate;
 pub(crate) mod uses;
@@ -94,8 +94,19 @@ impl Deref for Workflow {
 impl Workflow {
     /// Load a workflow from a buffer, with an assigned name.
     pub(crate) fn from_string(contents: String, key: InputKey) -> Result<Self> {
-        let inner = serde_yaml::from_str(&contents)
-            .with_context(|| format!("invalid GitHub Actions workflow: {key}"))?;
+        let inner = match serde_yaml::from_str(&contents) {
+            Ok(wf) => wf,
+            Err(error) => match validate_workflow(contents) {
+                Some(validation_errors) => {
+                    return Err(validation_errors)
+                        .with_context(|| format!("invalid GitHub Actions workflow: {key}"));
+                }
+                None => {
+                    return Err(error)
+                        .with_context(|| format!("invalid GitHub Actions workflow: {key}"));
+                }
+            },
+        };
 
         let document = yamlpath::Document::new(&contents)?;
 
