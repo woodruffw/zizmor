@@ -1,0 +1,73 @@
+name: 'Update code injection models'
+
+on:
+  # Run weekly (at arbitrary time)
+  schedule:
+    - cron: '31 7 * * 5'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  update-models:
+    permissions:
+      contents: write
+      pull-requests: write
+    name: Update models
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      # Use custom working dir for downloading npm packages and cloning the CodeQL repo
+      - name: Create working dir
+        run: |
+          mkdir codeql-models-working-dir
+
+      - name: Install dependencies
+        run: |
+          npm install yaml@2.7.1 --no-save
+        working-directory: codeql-models-working-dir
+
+      - name: Check out CodeQL
+        id: checkout_codeql
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: github/codeql
+          path: codeql-models-working-dir/codeql
+          sparse-checkout: |
+            actions/ql/lib/ext
+
+      - name: Update model file
+        run: node ../.github/workflows/process-codeql-sink-models.js
+        working-directory: codeql-models-working-dir
+
+      # If there are no changes, this action will not create a pull request
+      - name: Create or update pull request
+        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7
+        with:
+          add-paths: |
+            code-injection-models.txt
+          branch: bot/code-injection-models-update
+          commit-message: |
+            Update code injection models
+
+            https://github.com/github/codeql/commit/${{ steps.checkout_codeql.outputs.commit }}
+          title: Update code injection models
+          # Note: Unfortunately this action cannot trigger the regular workflows for the PR automatically, see
+          # https://github.com/peter-evans/create-pull-request/blob/main/docs/concepts-guidelines.md#triggering-further-workflow-runs
+          # Therefore suggest below to close and then reopen the PR
+          body: |
+            Automatically generated pull request to update the code injection models based on https://github.com/github/codeql/commit/${{ steps.checkout_codeql.outputs.commit }}.
+
+            In case of conflicts, manually run the workflow from the [Actions tab](https://github.com/woodruffw/zizmor/actions/workflows/update-code-injection-models.yml), the changes will then be force-pushed onto this pull request branch.
+            Do not manually update the pull request branch; those changes might get overwritten.
+
+            > [!IMPORTANT]\
+            > GitHub workflows have not been executed for this pull request yet. Before merging, close and then directly reopen this pull request to trigger the workflows.

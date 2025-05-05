@@ -112,6 +112,10 @@ impl<'de> Deserialize<'de> for RepositoryUsesPattern {
 
 /// Useful APIs for interacting with `uses: owner/repo` clauses.
 pub(crate) trait RepositoryUsesExt {
+    /// Returns the path consisting of `owner/repo[/subpath]`, but without ref.
+    /// The path is converted to lowercase.
+    fn path_without_ref(&self) -> String;
+
     /// Returns whether this `uses:` clause "matches" the given template.
     /// The template is itself formatted like a normal `uses:` clause.
     ///
@@ -143,6 +147,18 @@ pub(crate) trait RepositoryUsesExt {
 }
 
 impl RepositoryUsesExt for RepositoryUses {
+    fn path_without_ref(&self) -> String {
+        format!(
+            "{}/{}{}",
+            self.owner,
+            self.repo,
+            self.subpath
+                .as_ref()
+                .map_or("".to_owned(), |subpath| format!("/{subpath}"))
+        )
+        .to_lowercase()
+    }
+
     fn matches(&self, template: &str) -> bool {
         let Ok(other) = template.parse::<RepositoryUses>() else {
             return false;
@@ -225,6 +241,22 @@ mod tests {
     use crate::models::uses::RepositoryUsesExt;
 
     use super::RepositoryUsesPattern;
+
+    #[test]
+    fn test_repositoryuses_path_without_ref() {
+        for (uses, expected_path) in [
+            ("ACTIONS/CHECKOUT", "actions/checkout"),
+            ("actions/checkout@v3", "actions/checkout"),
+            ("actions/checkout/foo@v3", "actions/checkout/foo"),
+            ("actions/checkout/fOO/Bar@v3", "actions/checkout/foo/bar"),
+        ] {
+            let Ok(Uses::Repository(uses)) = Uses::from_str(uses) else {
+                panic!();
+            };
+
+            assert_eq!(uses.path_without_ref(), expected_path)
+        }
+    }
 
     #[test]
     fn test_repositoryuses_matches() {

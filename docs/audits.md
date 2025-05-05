@@ -979,6 +979,9 @@ used with attacker-controllable expression contexts, such as
 `github.event.issue.title` (which the attacker can fully control by supplying
 a new issue title).
 
+The list of action inputs which are vulnerable to injection attacks is
+based on [GitHub's CodeQL models](https://github.com/github/codeql/blob/main/actions/ql/lib/ext).
+
 Other resources:
 
 * [Keeping your GitHub Actions and workflows secure Part 2: Untrusted input]

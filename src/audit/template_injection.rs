@@ -3,17 +3,19 @@
 //! This looks for job steps where the step contains indicators of template
 //! expansion, i.e. anything matching `${{ }}`.
 //!
-//! The following steps are currently supported:
-//! * `run:`, indicating template expansion into a shell script or similar
-//! * `actions/github-script`, indicating template expansion into a JavaScript function
+//! The list of injection sinks is based on [CodeQL's models](https://github.com/github/codeql/blob/main/actions/ql/lib/ext).
+//! The models are processed and filtered by a workflow on the zizmor repository.
 //!
 //! A small amount of additional processing is done to remove template
 //! expressions that an attacker can't control.
+
+use std::{collections::HashMap, sync::LazyLock};
 
 use github_actions_models::{
     common::{Uses, expr::LoE},
     workflow::job::Strategy,
 };
+use itertools::Itertools;
 
 use super::{Audit, AuditLoadError, audit_meta};
 use crate::{
@@ -87,40 +89,57 @@ const SAFE_CONTEXTS: &[&str] = &[
 ];
 
 impl TemplateInjection {
-    fn script_with_location<'s>(
+    /// For the name of an action (e.g. `actions/github-script`) gets the `inputs`
+    /// which may allow code injection.
+    fn action_injection_inputs(action_name: &str) -> &[&'static str] {
+        static MODEL_INJECTION_SINKS: LazyLock<HashMap<&str, Vec<&str>>> = LazyLock::new(|| {
+            let mut m = HashMap::new();
+            let model_data = include_str!("../../code-injection-models.txt");
+
+            for line in model_data.split_terminator("\n") {
+                let (action, inputs) = line.split("|").collect_tuple().unwrap();
+                let inputs = inputs.split(",").collect();
+                m.insert(action, inputs);
+            }
+
+            m
+        });
+
+        match action_name {
+            // Hardcoded sinks which are not part of CodeQL models yet
+            "amadevus/pwsh-script" => &["script"],
+            "jannekem/run-python-script-action" => &["script"],
+            "cardinalby/js-eval-action" => &["expression"],
+            _ => match MODEL_INJECTION_SINKS.get(action_name) {
+                Some(inputs) => inputs,
+                None => &[],
+            },
+        }
+    }
+
+    fn scripts_with_location<'s>(
         step: &impl StepCommon<'s>,
-    ) -> Option<(String, SymbolicLocation<'s>)> {
+    ) -> Vec<(String, SymbolicLocation<'s>)> {
         match step.body() {
             models::StepBodyCommon::Uses {
                 uses: Uses::Repository(uses),
                 with,
-            } => {
-                if uses.matches("actions/github-script") {
-                    with.get("script").map(|script| {
+            } => TemplateInjection::action_injection_inputs(&uses.path_without_ref())
+                .iter()
+                .filter_map(|input| {
+                    let input = *input;
+                    with.get(input).map(|script| {
                         (
                             script.to_string(),
-                            step.location().with_keys(&["with".into(), "script".into()]),
+                            step.location().with_keys(&["with".into(), input.into()]),
                         )
                     })
-                } else if uses.matches("azure/powershell") || uses.matches("azure/cli") {
-                    // Both `azure/powershell` and `azure/cli` uses the same `inlineScript`
-                    // option to feed arbitrary code.
-
-                    with.get("inlineScript").map(|script| {
-                        (
-                            script.to_string(),
-                            step.location()
-                                .with_keys(&["with".into(), "inlineScript".into()]),
-                        )
-                    })
-                } else {
-                    None
-                }
-            }
+                })
+                .collect(),
             models::StepBodyCommon::Run { run, .. } => {
-                Some((run.to_string(), step.location().with_keys(&["run".into()])))
+                vec![(run.to_string(), step.location().with_keys(&["run".into()]))]
             }
-            _ => None,
+            _ => vec![],
         }
     }
 
@@ -275,27 +294,23 @@ impl TemplateInjection {
     ) -> anyhow::Result<Vec<Finding<'doc>>> {
         let mut findings = vec![];
 
-        let Some((script, script_loc)) = Self::script_with_location(step) else {
-            return Ok(findings);
-        };
-
-        for (expr, severity, confidence, persona) in
-            self.injectable_template_expressions(&script, step)
-        {
-            findings.push(
-                Self::finding()
-                    .severity(severity)
-                    .confidence(confidence)
-                    .persona(persona)
-                    .add_location(step.location().hidden())
-                    .add_location(step.location_with_name())
-                    .add_location(
-                        script_loc.clone().primary().annotated(format!(
+        for (script, script_loc) in Self::scripts_with_location(step) {
+            for (expr, severity, confidence, persona) in
+                self.injectable_template_expressions(&script, step)
+            {
+                findings.push(
+                    Self::finding()
+                        .severity(severity)
+                        .confidence(confidence)
+                        .persona(persona)
+                        .add_location(step.location().hidden())
+                        .add_location(step.location_with_name())
+                        .add_location(script_loc.clone().primary().annotated(format!(
                             "{expr} may expand into attacker-controllable code"
-                        )),
-                    )
-                    .build(step)?,
-            )
+                        )))
+                        .build(step)?,
+                )
+            }
         }
 
         Ok(findings)
