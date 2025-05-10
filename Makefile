@@ -30,3 +30,7 @@ docs/snippets/sponsors.html: docs/snippets/sponsors.json docs/snippets/render-sp
 refresh-schemas:
 	curl https://json.schemastore.org/github-workflow.json > src/data/github-workflow.json
 	curl https://json.schemastore.org/github-action.json > src/data/github-action.json
+
+.PHONY: webhooks-to-contexts
+webhooks-to-contexts:
+	uv run --script --only-group codegen ./support/webhooks-to-contexts.py
