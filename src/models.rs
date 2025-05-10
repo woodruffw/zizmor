@@ -9,8 +9,8 @@ use anyhow::{Context, bail};
 use github_actions_models::common::Env;
 use github_actions_models::common::expr::LoE;
 use github_actions_models::workflow::event::{BareEvent, OptionalBody};
-use github_actions_models::workflow::job::{RunsOn, Strategy};
-use github_actions_models::workflow::{self, Trigger, job, job::StepBody};
+use github_actions_models::workflow::job::{DeploymentEnvironment, RunsOn, Strategy};
+use github_actions_models::workflow::{self, job, job::StepBody, Trigger};
 use github_actions_models::{action, common};
 use indexmap::IndexMap;
 use line_index::LineIndex;
@@ -223,6 +223,10 @@ impl<'doc> NormalJob<'doc> {
     /// An iterator of this job's constituent [`Step`]s.
     pub(crate) fn steps(&self) -> Steps<'doc> {
         Steps::new(self)
+    }
+
+    pub(crate) fn environment(&self) -> Option<&DeploymentEnvironment> {
+        self.inner.environment.as_ref()
     }
 
     /// Perform feats of heroism to figure of what this job's runner's
