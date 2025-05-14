@@ -183,6 +183,10 @@
         "issues": {
           "$ref": "#/definitions/permissions-level"
         },
+        "models": {
+          "type": "string",
+          "enum": ["read", "none"]
+        },
         "packages": {
           "$ref": "#/definitions/permissions-level"
         },
