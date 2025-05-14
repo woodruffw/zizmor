@@ -9,10 +9,10 @@ error[cache-poisoning]: runtime artifacts potentially vulnerable to a cache pois
    |   ^^^^^^^^^^^ generally used when publishing artifacts generated at runtime
  2 |
 ...
-15 |           uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a
-16 | /         with:
-17 | |           python-version: "3.12"
-18 | |           enable-cache: ${{ github.ref == 'refs/heads/main' }}
+16 |           uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a
+17 | /         with:
+18 | |           python-version: "3.12"
+19 | |           enable-cache: ${{ github.ref == 'refs/heads/main' }}
    | |______________________________________________________________^ opt-in for caching might happen here
    |
    = note: audit confidence → Low

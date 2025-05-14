@@ -649,6 +649,18 @@ fn unredacted_secrets() -> Result<()> {
 }
 
 #[test]
+fn secrets_outside_environment() -> Result<()> {
+    insta::assert_snapshot!(
+        zizmor()
+            .input(input_under_test("secret-without-env.yml"))
+            .args(["--persona=pedantic"])
+            .run()?
+    );
+
+    Ok(())
+}
+
+#[test]
 fn forbidden_uses() -> Result<()> {
     for config in [
         "allow-all",
@@ -669,6 +681,7 @@ fn forbidden_uses() -> Result<()> {
                 .run()?
         );
     }
+
 
     Ok(())
 }
