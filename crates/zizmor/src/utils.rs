@@ -105,23 +105,6 @@ where
     }
 }
 
-/// Convenience trait for inline transformations of `Self`.
-///
-/// This is similar to the `tap` crate's `Pipe` trait, except that
-/// it's a little less general (`pipe<T>(T) -> T``, instead of
-/// `pipe<T, U>(T) -> U`).
-pub(crate) trait PipeSelf<F> {
-    fn pipe(self, f: F) -> Self
-    where
-        F: FnOnce(Self) -> Self,
-        Self: Sized,
-    {
-        f(self)
-    }
-}
-
-impl<T, F> PipeSelf<F> for T where T: Sized {}
-
 /// Splits the given `patterns` string into one or more patterns, using
 /// approximately the same rules as GitHub's `@actions/glob` package.
 pub(crate) fn split_patterns(patterns: &str) -> impl Iterator<Item = &str> {

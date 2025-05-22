@@ -1,0 +1,13 @@
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@40ce7bd57a3980732dc25d1552210e87d1358332

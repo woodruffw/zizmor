@@ -1,7 +1,9 @@
 ---
-source: tests/integration/e2e.rs
+source: crates/zizmor/tests/integration/e2e.rs
 expression: "zizmor().offline(false).output(OutputMode::Both).args([\"--no-online-audits\"]).input(\"woodruffw-experiments/zizmor-bug-726@a038d1a35\").run()?"
 ---
+ WARN collect_inputs:fetch_audit_inputs{slug=RepositoryUses { owner: "woodruffw-experiments", repo: "zizmor-bug-726", subpath: None, git_ref: Some("a038d1a35") }}: zizmor::registry: failed to validate input as Workflow: input does not match expected validation schema
+ WARN collect_inputs:fetch_audit_inputs{slug=RepositoryUses { owner: "woodruffw-experiments", repo: "zizmor-bug-726", subpath: None, git_ref: Some("a038d1a35") }}: zizmor::registry: failed to validate input as Workflow: input does not match expected validation schema
  INFO collect_inputs: zizmor: collected 6 inputs from woodruffw-experiments/zizmor-bug-726
  INFO zizmor: skipping impostor-commit: offline audits only requested
  INFO zizmor: skipping ref-confusion: offline audits only requested

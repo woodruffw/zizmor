@@ -3,29 +3,27 @@
 //! Build on synchronous reqwest to avoid octocrab's need to taint
 //! the whole codebase with async.
 
-use std::{io::Read, ops::Deref, path::Path};
+use std::{
+    collections::HashMap,
+    io::Read,
+    path::{Path, PathBuf},
+    sync::RwLock,
+};
 
-use anyhow::{Context, Result, anyhow};
-use camino::Utf8Path;
-use flate2::read::GzDecoder;
+use anyhow::{Context, Result};
+use git2::{ObjectType, Oid, Repository, TreeWalkMode, TreeWalkResult, build::RepoBuilder};
 use github_actions_models::common::RepositoryUses;
 use http_cache_reqwest::{
     CACacheManager, Cache, CacheMode, CacheOptions, HttpCache, HttpCacheOptions,
 };
-use owo_colors::OwoColorize;
-use reqwest::{
-    Response, StatusCode,
-    header::{ACCEPT, AUTHORIZATION, HeaderMap, USER_AGENT},
-};
+use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, USER_AGENT};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
-use serde::{Deserialize, de::DeserializeOwned};
-use tar::Archive;
+use serde::Deserialize;
 use tracing::instrument;
 
 use crate::{
     InputRegistry,
     registry::{InputKey, InputKind},
-    utils::PipeSelf,
 };
 
 /// Represents different types of GitHub hosts.
@@ -59,11 +57,28 @@ impl GitHubHost {
             Self::Standard(host) => format!("https://api.{host}"),
         }
     }
+
+    fn to_repo_url(&self, owner: &str, repo: &str, token: Option<String>) -> String {
+        let host = match self {
+            Self::Enterprise(host) => host,
+            Self::Standard(host) => host,
+        };
+
+        let mut url = format!("https://{host}/{owner}/{repo}.git");
+        if let Some(token) = token {
+            url = format!("https://oauth2:{token}@{host}/{owner}/{repo}.git");
+        }
+        url
+    }
 }
 
 pub(crate) struct Client {
     api_base: String,
     http: ClientWithMiddleware,
+    host: GitHubHost,
+    token: Option<String>,
+    cache_dir: PathBuf,
+    fetched_repos: RwLock<HashMap<String, PathBuf>>,
 }
 
 impl Client {
@@ -107,99 +122,181 @@ impl Client {
         Self {
             api_base: hostname.to_api_url(),
             http,
+            host: hostname.clone(),
+            token: match token.len() {
+                0 => None,
+                _ => Some(token.to_string()),
+            },
+            cache_dir: cache_dir.to_path_buf(),
+            fetched_repos: RwLock::new(HashMap::new()),
         }
     }
 
-    async fn paginate<T: DeserializeOwned>(
-        &self,
-        endpoint: &str,
-    ) -> reqwest_middleware::Result<Vec<T>> {
-        let mut dest = vec![];
-        let url = format!("{api_base}/{endpoint}", api_base = self.api_base);
+    #[instrument(skip(self))]
+    pub(crate) async fn list_refs(&self, owner: &str, repo: &str) -> Result<Vec<Ref>> {
+        let repository = self.get_repo(owner, repo).await?;
+        let refs = repository.references()?;
 
-        // If we were nice, we would parse GitHub's `links` header and extract
-        // the remaining number of pages. But this is annoying, and we are
-        // not nice, so we simply request pages until GitHub bails on us
-        // and returns empty results.
-        let mut pageno = 0;
-        loop {
-            let resp = self
-                .http
-                .get(&url)
-                .query(&[("page", pageno), ("per_page", 100)])
-                .send()
-                .await?
-                .error_for_status()?;
+        Ok(refs
+            .enumerate()
+            .filter_map(|(_, r)| match r {
+                Ok(r) => Some(r),
+                Err(_) => None,
+            })
+            .map(|r| {
+                let name = r.name().unwrap_or("");
+                let oid = r.peel_to_commit().unwrap().id().to_string();
+                if name.starts_with("refs/heads/") {
+                    Ref::Branch(Branch {
+                        name: name.replace("refs/heads/", ""),
+                        commit: Object { sha: oid },
+                    })
+                } else if name.starts_with("refs/remotes/origin/") {
+                    Ref::Branch(Branch {
+                        name: name.replace("refs/remotes/origin/", ""),
+                        commit: Object { sha: oid },
+                    })
+                } else {
+                    Ref::Tag(Tag {
+                        name: name.replace("refs/tags/", ""),
+                        commit: Object { sha: oid },
+                    })
+                }
+            })
+            .collect())
+    }
 
-            let page = resp.json::<Vec<T>>().await?;
-            if page.is_empty() {
-                break;
+    #[instrument(skip(self))]
+    pub(crate) async fn get_repo(&self, owner: &str, repo: &str) -> Result<Repository> {
+        let path = self.cache_dir.join(format!("repositories/{owner}/{repo}"));
+
+        let repository = match self
+            .fetched_repos
+            .read()
+            .unwrap()
+            .get(&format!("{owner}/{repo}"))
+        {
+            Some(path) => {
+                let repository = Repository::open(path)?;
+                repository
             }
+            None => match path.exists() {
+                true => {
+                    self.run_fetch(&path).await?;
+                    let repository = Repository::open(&path)?;
+                    repository
+                }
+                false => {
+                    let repository = RepoBuilder::new()
+                        .bare(true)
+                        .clone(
+                            &self.host.to_repo_url(owner, repo, self.token.clone()),
+                            &path,
+                        )
+                        .with_context(|| format!("couldn't clone repo {owner}/{repo}"))?;
+                    repository
+                }
+            },
+        };
 
-            dest.extend(page);
-            pageno += 1;
-        }
+        self.fetched_repos
+            .write()
+            .unwrap()
+            .insert(format!("{owner}/{repo}"), path.clone());
 
-        Ok(dest)
+        Ok(repository)
     }
 
-    /// Maps the response to a `Result<bool>`, depending on whether
-    /// the response's status indicates 200 or 404.
-    ///
-    /// The error variants communicate all other status codes,
-    /// with additional context where helpful.
-    fn resp_present(resp: Response) -> Result<bool> {
-        match resp.status() {
-            StatusCode::OK => Ok(true),
-            StatusCode::NOT_FOUND => Ok(false),
-            StatusCode::FORBIDDEN => Err(anyhow::Error::from(resp.error_for_status().unwrap_err())
-                .context("request forbidden; token permissions may be insufficient")),
-            _ => Err(resp.error_for_status().unwrap_err().into()),
+    #[instrument(skip(self))]
+    pub(crate) async fn run_fetch(&self, path: &PathBuf) -> Result<()> {
+        let repository = Repository::open(path)?;
+        let mut remote = match repository.find_remote("origin") {
+            Ok(r) => r,
+            Err(_) => return Err(anyhow::anyhow!("couldn't find remote for {path:?}")),
+        };
+
+        let refspecs = remote.fetch_refspecs()?;
+        let mut normalized_refspecs = vec![];
+        for spec in refspecs.iter().filter_map(|r| r).map(|s| s.to_string()) {
+            normalized_refspecs.push(spec);
         }
+        remote.fetch(&normalized_refspecs, None, None)?;
+        Ok(())
+    }
+
+    #[instrument(skip(self, repo))]
+    pub(crate) async fn revwalk_count(
+        &self,
+        repo: &Repository,
+        base: Oid,
+        head: Oid,
+    ) -> Result<usize> {
+        // Walk the graph from the interesting commit ignoring the other revision.
+        // This enables us to count the number of commits between the two as all
+        // ancestors of the "hidden" revision are ignored.
+        let mut revwalk = repo.revwalk()?;
+        revwalk.push(base)?;
+        revwalk.hide(head)?;
+        Ok(revwalk.count())
     }
 
     #[instrument(skip(self))]
     #[tokio::main]
     pub(crate) async fn list_branches(&self, owner: &str, repo: &str) -> Result<Vec<Branch>> {
-        self.paginate(&format!("repos/{owner}/{repo}/branches"))
-            .await
-            .map_err(Into::into)
+        let refs = self.list_refs(owner, repo).await?;
+        let mut branches = vec![];
+
+        for reference in refs.iter() {
+            match reference {
+                Ref::Branch(branch) => branches.push(branch.clone()),
+                _ => {}
+            }
+        }
+
+        Ok(branches)
     }
 
     #[instrument(skip(self))]
     #[tokio::main]
     pub(crate) async fn list_tags(&self, owner: &str, repo: &str) -> Result<Vec<Tag>> {
-        self.paginate(&format!("repos/{owner}/{repo}/tags"))
-            .await
-            .map_err(Into::into)
+        let mut tags = vec![];
+
+        let refs = self.list_refs(owner, repo).await?;
+
+        for reference in refs.iter() {
+            match reference {
+                Ref::Tag(tag) => tags.push(tag.clone()),
+                _ => {}
+            }
+        }
+
+        Ok(tags)
     }
 
     #[instrument(skip(self))]
     #[tokio::main]
     pub(crate) async fn has_branch(&self, owner: &str, repo: &str, branch: &str) -> Result<bool> {
-        let url = format!(
-            "{api_base}/repos/{owner}/{repo}/git/ref/heads/{branch}",
-            api_base = self.api_base
-        );
-
-        let resp = self.http.get(&url).send().await?;
-        Client::resp_present(resp).with_context(|| {
-            format!("{owner}/{repo}: error from the GitHub API while checking {branch}")
-        })
+        let refs = self.list_refs(owner, repo).await?;
+        Ok(refs
+            .iter()
+            .filter_map(|reference| match reference {
+                Ref::Branch(branch) => Some(branch),
+                _ => None,
+            })
+            .any(|b| b.name == branch))
     }
 
     #[instrument(skip(self))]
     #[tokio::main]
     pub(crate) async fn has_tag(&self, owner: &str, repo: &str, tag: &str) -> Result<bool> {
-        let url = format!(
-            "{api_base}/repos/{owner}/{repo}/git/ref/tags/{tag}",
-            api_base = self.api_base
-        );
-
-        let resp = self.http.get(&url).send().await?;
-        Client::resp_present(resp).with_context(|| {
-            format!("{owner}/{repo}: error from the GitHub API while checking {tag}")
-        })
+        let refs = self.list_refs(owner, repo).await?;
+        Ok(refs
+            .iter()
+            .filter_map(|reference| match reference {
+                Ref::Tag(tag) => Some(tag),
+                _ => None,
+            })
+            .any(|t| t.name == tag))
     }
 
     #[instrument(skip(self))]
@@ -210,34 +307,16 @@ impl Client {
         repo: &str,
         git_ref: &str,
     ) -> Result<Option<String>> {
-        // GitHub Actions generally resolves branches before tags, so try
-        // the repo's branches first.
-        let url = format!(
-            "{api_base}/repos/{owner}/{repo}/git/ref/heads/{git_ref}",
-            api_base = self.api_base
-        );
+        let refs = self.list_refs(owner, repo).await?;
+        let reference = refs.iter().find(|reference| match reference {
+            Ref::Branch(branch) => branch.name == git_ref,
+            Ref::Tag(tag) => tag.name == git_ref,
+        });
 
-        let resp = self.http.get(url).send().await?;
-        match resp.status() {
-            StatusCode::OK => Ok(Some(resp.json::<GitRef>().await?.object.sha)),
-            StatusCode::NOT_FOUND => {
-                let url = format!(
-                    "{api_base}/repos/{owner}/{repo}/git/ref/tags/{git_ref}",
-                    api_base = self.api_base
-                );
-
-                let resp = self.http.get(url).send().await?;
-                match resp.status() {
-                    StatusCode::OK => Ok(Some(resp.json::<GitRef>().await?.object.sha)),
-                    StatusCode::NOT_FOUND => Ok(None),
-                    s => Err(anyhow!(
-                        "{owner}/{repo}: error from GitHub API while accessing ref {git_ref}: {s}"
-                    )),
-                }
-            }
-            s => Err(anyhow!(
-                "{owner}/{repo}: error from GitHub API while accessing ref {git_ref}: {s}"
-            )),
+        match reference {
+            Some(Ref::Branch(branch)) => Ok(Some(branch.commit.sha.clone())),
+            Some(Ref::Tag(tag)) => Ok(Some(tag.commit.sha.clone())),
+            _ => Ok(None),
         }
     }
 
@@ -275,21 +354,45 @@ impl Client {
         base: &str,
         head: &str,
     ) -> Result<Option<ComparisonStatus>> {
-        let url = format!(
-            "{api_base}/repos/{owner}/{repo}/compare/{base}...{head}",
-            api_base = self.api_base
-        );
-
-        let resp = self.http.get(url).send().await?;
-
-        match resp.status() {
-            StatusCode::OK => {
-                Ok::<_, reqwest::Error>(Some(resp.json::<Comparison>().await?.status))
+        let repository = self.get_repo(owner, repo).await?;
+        // Use git2's revwalk to determine the relationship between base and head
+        let base_commit = match repository.revparse_single(base) {
+            Ok(commit) => commit,
+            Err(e) => {
+                if e.code() == git2::ErrorCode::NotFound {
+                    return Ok(None);
+                }
+                return Err(e.into());
             }
-            StatusCode::NOT_FOUND => Ok(None),
-            _ => Err(resp.error_for_status().unwrap_err()),
+        };
+        let head_commit = match repository.revparse_single(head) {
+            Ok(commit) => commit,
+            Err(e) => {
+                if e.code() == git2::ErrorCode::NotFound {
+                    return Ok(None);
+                }
+                return Err(e.into());
+            }
+        };
+
+        let base_oid = base_commit.id();
+        let head_oid = head_commit.id();
+
+        if base_oid == head_oid {
+            return Ok(Some(ComparisonStatus::Identical));
         }
-        .map_err(Into::into)
+
+        let ahead = self.revwalk_count(&repository, base_oid, head_oid).await?;
+        let behind = self.revwalk_count(&repository, head_oid, base_oid).await?;
+
+        let status = match (ahead, behind) {
+            (0, 0) => ComparisonStatus::Identical,
+            (_, 0) => ComparisonStatus::Ahead,
+            (0, _) => ComparisonStatus::Behind,
+            (_, _) => ComparisonStatus::Diverged,
+        };
+
+        return Ok(Some(status));
     }
 
     #[instrument(skip(self))]
@@ -335,50 +438,40 @@ impl Client {
 
         tracing::debug!("fetching workflows for {owner}/{repo}");
 
-        // It'd be nice if the GitHub contents API allowed us to retrieve
-        // all file contents with a directory listing, but it doesn't.
-        // Instead, we make `N+1` API calls: one to list the workflows
-        // directory, and `N` for the constituent workflow files.
-        let url = format!(
-            "{api_base}/repos/{owner}/{repo}/contents/.github/workflows",
-            api_base = self.api_base
-        );
-        let resp: Vec<File> = self
-            .http
-            .get(&url)
-            .pipe(|req| match git_ref {
-                Some(g) => req.query(&[("ref", g)]),
-                None => req,
-            })
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
+        let repository = self.get_repo(owner, repo).await?;
+        let concrete_ref = match git_ref {
+            Some(reference) => match Oid::from_str(reference.as_str()) {
+                Ok(_) => reference,
+                Err(_) => &format!("refs/remotes/origin/{reference}").to_string(),
+            },
+            None => &"HEAD".to_string(),
+        };
 
-        for file in resp
-            .into_iter()
-            .filter(|file| file.name.ends_with(".yml") || file.name.ends_with(".yaml"))
+        let commit = repository.revparse_single(concrete_ref)?;
+        let tree = commit.peel_to_tree()?;
+
+        let mut entries = vec![];
+
+        let _ = tree.walk(git2::TreeWalkMode::PreOrder, |name, entry| {
+            let full_path = format!("{name}{}", entry.name().unwrap());
+            if full_path.contains(".github/workflows")
+                && (full_path.ends_with(".yml") || full_path.ends_with(".yaml"))
+                && matches!(entry.kind(), Some(ObjectType::Blob))
+            {
+                entries.push((entry.id(), full_path));
+            }
+            TreeWalkResult::Ok
+        });
+
+        for (blob, path) in entries
+            .iter()
+            .map(|(id, path)| (repository.find_blob(*id).unwrap(), path))
         {
-            let file_url = format!("{url}/{file}", file = file.name);
-            tracing::debug!("fetching {file_url}");
-
-            let contents = self
-                .http
-                .get(file_url)
-                .header(ACCEPT, "application/vnd.github.raw+json")
-                .pipe(|req| match git_ref.as_ref() {
-                    Some(g) => req.query(&[("ref", g)]),
-                    None => req,
-                })
-                .send()
-                .await?
-                .error_for_status()?
-                .text()
-                .await?;
-
-            let key = InputKey::remote(slug, file.path)?;
-            registry.register(InputKind::Workflow, contents, key)?;
+            let mut str_content = String::new();
+            let mut contents = blob.content();
+            contents.read_to_string(&mut str_content)?;
+            let key = InputKey::remote(slug, path.clone())?;
+            registry.register(InputKind::Workflow, str_content, key)?;
         }
 
         Ok(())
@@ -396,68 +489,69 @@ impl Client {
         slug: &RepositoryUses,
         registry: &mut InputRegistry,
     ) -> Result<()> {
-        let url = format!(
-            "{api_base}/repos/{owner}/{repo}/tarball/{git_ref}",
-            api_base = self.api_base,
-            owner = slug.owner,
-            repo = slug.repo,
-            git_ref = slug.git_ref.as_deref().unwrap_or("HEAD")
-        );
-        tracing::debug!("fetching repo: {url}");
+        tracing::debug!("fetching repo: {}/{}", slug.owner, slug.repo);
 
-        // TODO: Could probably make this slightly faster by
-        // streaming asynchronously into the decompression,
-        // probably with the async-compression crate.
-        let resp = self.http.get(&url).send().await?;
+        let repository = self
+            .get_repo(slug.owner.as_str(), slug.repo.as_str())
+            .await?;
+        let concrete_ref = match slug.git_ref.as_deref() {
+            Some(reference) => match Oid::from_str(reference) {
+                Ok(_) => &reference.to_string(),
+                Err(_) => &format!("refs/remotes/origin/{reference}").to_string(),
+            },
+            None => &"HEAD".to_string(),
+        };
 
-        if !resp.status().is_success() {
-            return Err(anyhow!(
-                "failed to fetch {url}: {status}",
-                status = resp.status().red()
-            ));
+        let commit = repository.revparse_single(concrete_ref)?;
+        let tree = commit.peel_to_tree()?;
+
+        let mut workflow_entries = Vec::new();
+        let mut action_entries = Vec::new();
+        let _ = tree.walk(TreeWalkMode::PreOrder, |name, entry| {
+            let full_path = format!("{name}{}", entry.name().unwrap());
+            if full_path.contains(".github/workflows")
+                && (full_path.ends_with(".yml") || full_path.ends_with(".yaml"))
+                && matches!(entry.kind(), Some(ObjectType::Blob))
+            {
+                workflow_entries.push((entry.id(), full_path.clone()));
+            }
+            if matches!(entry.name(), Some("action.yml") | Some("action.yaml"))
+                && matches!(entry.kind(), Some(ObjectType::Blob))
+            {
+                action_entries.push((entry.id(), full_path.clone()));
+            }
+            TreeWalkResult::Ok
+        });
+
+        for (blob, path) in workflow_entries
+            .iter()
+            .map(|(blob, path)| (repository.find_blob(*blob).unwrap(), path))
+        {
+            let key = InputKey::remote(slug, path.clone())?;
+            let mut str_content = String::new();
+            let mut contents = blob.content();
+            contents.read_to_string(&mut str_content)?;
+            registry.register(InputKind::Workflow, str_content, key)?;
         }
 
-        let contents = resp.bytes().await?;
-        let tar = GzDecoder::new(contents.deref());
-
-        let mut archive = Archive::new(tar);
-        for entry in archive.entries()? {
-            let mut entry = entry?;
-
-            if !entry.header().entry_type().is_file() {
-                continue;
-            }
-
-            // GitHub's tarballs contain entries that are prefixed with
-            // `{owner}-{repo}-{ref}`, where `{ref}` has been concretized
-            // into a short hash. We strip this out to ensure that our
-            // paths look like normal paths.
-            let entry_path = entry.path()?;
-            let file_path: &Utf8Path = {
-                let mut components = entry_path.components();
-                components.next();
-                components.as_path().try_into()?
-            };
-
-            if matches!(file_path.extension(), Some("yaml" | "yml"))
-                && file_path
-                    .parent()
-                    .is_some_and(|dir| dir.ends_with(".github/workflows"))
-            {
-                let key = InputKey::remote(slug, file_path.to_string())?;
-                let mut contents = String::with_capacity(entry.size() as usize);
-                entry.read_to_string(&mut contents)?;
-                registry.register(InputKind::Workflow, contents, key)?;
-            } else if matches!(file_path.file_name(), Some("action.yml" | "action.yaml")) {
-                let key = InputKey::remote(slug, file_path.to_string())?;
-                let mut contents = String::with_capacity(entry.size() as usize);
-                entry.read_to_string(&mut contents)?;
-                registry.register(InputKind::Action, contents, key)?;
-            }
+        for (blob, path) in action_entries
+            .iter()
+            .map(|(blob, path)| (repository.find_blob(*blob).unwrap(), path))
+        {
+            let key = InputKey::remote(slug, path.clone())?;
+            let mut str_content = String::new();
+            let mut contents = blob.content();
+            contents.read_to_string(&mut str_content)?;
+            registry.register(InputKind::Action, str_content, key)?;
         }
 
         Ok(())
     }
+}
+
+pub(crate) enum Ref {
+    Branch(Branch),
+    Tag(Tag),
 }
 
 /// A single branch, as returned by GitHub's branches endpoints.
@@ -486,11 +580,6 @@ pub(crate) struct Object {
     pub(crate) sha: String,
 }
 
-#[derive(Deserialize)]
-pub(crate) struct GitRef {
-    pub(crate) object: Object,
-}
-
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum ComparisonStatus {
@@ -500,26 +589,11 @@ pub(crate) enum ComparisonStatus {
     Identical,
 }
 
-/// The result of comparing two commits via GitHub's API.
-///
-/// See <https://docs.github.com/en/rest/commits/commits?apiVersion=2022-11-28>
-#[derive(Deserialize)]
-pub(crate) struct Comparison {
-    pub(crate) status: ComparisonStatus,
-}
-
 /// Represents a GHSA advisory.
 #[derive(Deserialize)]
 pub(crate) struct Advisory {
     pub(crate) ghsa_id: String,
     pub(crate) severity: String,
-}
-
-/// Represents a file listing from GitHub's contents API.
-#[derive(Deserialize)]
-pub(crate) struct File {
-    name: String,
-    path: String,
 }
 
 #[cfg(test)]
