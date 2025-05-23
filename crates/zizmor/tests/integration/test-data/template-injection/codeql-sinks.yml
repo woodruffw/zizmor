@@ -1,0 +1,16 @@
+# ensures that we flag template injections derived from CodeQL's sinks
+
+name: pwsh-script
+
+on: pull_request
+
+permissions: {}
+
+jobs:
+  some-job:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: mikefarah/yq@b534aa9ee5d38001fba3cd8fe254a037e4847b37 # v4.45.4
+        with:
+          cmd: ${{ github.event.pull_request.title }}

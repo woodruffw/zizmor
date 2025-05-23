@@ -1,13 +1,14 @@
-use std::fs::File;
-use std::io;
+use std::fs::{self, File};
+use std::path::Path;
+use std::{env, io};
 
 use fst::MapBuilder;
 
-fn main() {
+fn do_context_capabilities() {
     println!("cargo::rerun-if-changed=../../support/context-capabilities.csv");
 
-    let out_dir = std::env::var("OUT_DIR").unwrap();
-    let out_path = std::path::Path::new(&out_dir).join("context-capabilities.fst");
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let out_path = Path::new(&out_dir).join("context-capabilities.fst");
 
     let out = io::BufWriter::new(File::create(out_path).unwrap());
     let mut build = MapBuilder::new(out).unwrap();
@@ -31,4 +32,18 @@ fn main() {
     }
 
     build.finish().unwrap();
+}
+
+fn do_codeql_injection_sinks() {
+    let source = "../../support/codeql-injection-sinks.json";
+    let target = Path::new(&env::var("OUT_DIR").unwrap()).join("codeql-injection-sinks.json");
+
+    print!("cargo::rerun-if-changed={}", source);
+
+    fs::copy(source, target).unwrap();
+}
+
+fn main() {
+    do_context_capabilities();
+    do_codeql_injection_sinks();
 }

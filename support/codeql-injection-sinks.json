@@ -1,0 +1,53 @@
+{
+  "devorbitus/yq-action-output": [
+    "cmd"
+  ],
+  "docker/build-push-action": [
+    "context"
+  ],
+  "appleboy/ssh-action": [
+    "script"
+  ],
+  "sergeysova/jq-action": [
+    "cmd"
+  ],
+  "azure/powershell": [
+    "inlineScript"
+  ],
+  "roots/issue-closer-action": [
+    "issue-close-message",
+    "pr-close-message"
+  ],
+  "skitionek/notify-microsoft-teams": [
+    "overwrite"
+  ],
+  "mikefarah/yq": [
+    "cmd"
+  ],
+  "lucasbento/auto-close-issues": [
+    "issue-close-message"
+  ],
+  "imjohnbo/issue-bot": [
+    "body",
+    "linked-comments-previous-issue-text",
+    "linked-comments-new-issue-text"
+  ],
+  "8398a7/action-slack": [
+    "custom_payload"
+  ],
+  "azure/cli": [
+    "inlineScript"
+  ],
+  "actions/github-script": [
+    "script"
+  ],
+  "gautamkrishnar/blog-post-workflow": [
+    "item_exec"
+  ],
+  "tibdex/backport": [
+    "body_template",
+    "head_template",
+    "labels_template",
+    "title_template"
+  ]
+}

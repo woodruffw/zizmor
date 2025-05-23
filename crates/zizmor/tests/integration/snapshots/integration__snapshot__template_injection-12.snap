@@ -1,0 +1,21 @@
+---
+source: crates/zizmor/tests/integration/snapshot.rs
+expression: "zizmor().input(input_under_test(\"template-injection/pwsh-script.yml\")).run()?"
+---
+error[template-injection]: code injection via template expansion
+  --> @@INPUT@@:12:9
+   |
+12 |          - uses: Amadevus/pwsh-script@97a8b211a5922816aa8a69ced41fa32f23477186 # v2.0.3
+   |  __________^
+13 | |          with:
+14 | |            script: |
+   | | ___________^
+15 | ||             Write-ActionDebug "Running for pull request ${{ github.event.pull_request.title }}"
+   | ||                                                                                                ^
+   | ||________________________________________________________________________________________________|
+   |  |________________________________________________________________________________________________this step
+   |                                                                                                   github.event.pull_request.title may expand into attacker-controllable code
+   |
+   = note: audit confidence → High
+
+2 findings (1 suppressed): 0 unknown, 0 informational, 0 low, 0 medium, 1 high

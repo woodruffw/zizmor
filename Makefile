@@ -33,7 +33,15 @@ refresh-schemas:
 
 .PHONY: webhooks-to-contexts
 webhooks-to-contexts: support/known-safe-contexts.txt
-	uv run --script --only-group codegen ./support/webhooks-to-contexts.py
+
+support/known-safe-contexts.txt: support/webhooks-to-contexts.py
+	$<
+
+.PHONY: codeql-injection-sinks
+codeql-injection-sinks: support/codeql-injection-sinks.json
+
+support/codeql-injection-sinks.json: support/codeql-injection-sinks.py
+	$< > $@
 
 .PHONY: pinact
 pinact:

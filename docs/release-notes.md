@@ -18,6 +18,9 @@ of `zizmor`.
 * The [template-injection] audit has been rewritten, and is now significantly
   more precise and general over contexts supplied via GitHub's webhook
   payloads (i.e. `github.event.*`) (#745)
+* The [template-injection] audit now detects vulnerable template injections
+  in more actions inputs, thanks to an integration with CodeQL's
+  sink metadata (#849)
 
 ### Bug Fixes 🐛
 

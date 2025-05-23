@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.9"
 resolution-markers = [
     "python_full_version >= '3.10'",
@@ -1356,6 +1357,7 @@ source = { editable = "." }
 codegen = [
     { name = "prance", version = "23.6.21.0", source = { registry = "https://pypi.org/simple" }, extra = ["osv"], marker = "python_full_version < '3.10'" },
     { name = "prance", version = "25.4.8.0", source = { registry = "https://pypi.org/simple" }, extra = ["osv"], marker = "python_full_version >= '3.10'" },
+    { name = "pyyaml" },
     { name = "requests" },
 ]
 docs = [
@@ -1368,6 +1370,7 @@ docs = [
 [package.metadata.requires-dev]
 codegen = [
     { name = "prance", extras = ["osv"] },
+    { name = "pyyaml" },
     { name = "requests" },
 ]
 docs = [

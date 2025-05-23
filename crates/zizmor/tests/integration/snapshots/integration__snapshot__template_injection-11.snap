@@ -1,0 +1,18 @@
+---
+source: crates/zizmor/tests/integration/snapshot.rs
+expression: "zizmor().input(input_under_test(\"template-injection/codeql-sinks.yml\")).run()?"
+---
+error[template-injection]: code injection via template expansion
+  --> @@INPUT@@:14:9
+   |
+14 |         - uses: mikefarah/yq@b534aa9ee5d38001fba3cd8fe254a037e4847b37 # v4.45.4
+   |  _________^
+15 | |         with:
+16 | |           cmd: ${{ github.event.pull_request.title }}
+   | |___________^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this step
+   |             |
+   |             github.event.pull_request.title may expand into attacker-controllable code
+   |
+   = note: audit confidence → High
+
+2 findings (1 suppressed): 0 unknown, 0 informational, 0 low, 0 medium, 1 high
