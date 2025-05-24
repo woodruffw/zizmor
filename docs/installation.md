@@ -121,11 +121,23 @@ description: Installation instructions for zizmor.
         This is a community-maintained package.
 
     `zizmor` is available in [Chimera Linux' user repo](https://chimera-linux.org/docs/apk#repositories):
-    
+
     ```bash
     # If you don't have the 'user' repo enabled yet, do that first
     apk add chimera-repo-user
 
+    apk add zizmor
+    ```
+
+=== "Alpine Linux"
+
+    [![Alpine Linux package](https://repology.org/badge/version-for-repo/alpine_edge/zizmor.svg)](https://repology.org/project/zizmor/versions)
+
+    !!! note
+
+        This is a community-maintained package.
+
+    ```bash
     apk add zizmor
     ```
 
